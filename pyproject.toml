@@ -1,0 +1,40 @@
+[project]
+name = "esm"
+version = "3.0.0"
+description = "EvolutionaryScale open model repository"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE.txt"}
+
+authors = [
+  {name = "EvolutionaryScale Team"}
+]
+
+maintainers = [
+  {name = "Zeming Lin", email = "zeming+esm@evolutionaryscale.ai" }
+]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Programming Language :: Python :: 3.10",
+]
+
+dependencies = [
+  "torch>=2.0.0",
+  "torchvision",
+  "torchtext",
+  "transformers",
+  "ipython",
+  "einops",
+  "biotite",
+  "msgpack-numpy",
+  "biopython",
+  "scikit-learn",
+  "brotli",
+  "attrs",
+  "pandas",
+]
+
+[tool.setuptools]
+packages = ["esm"]
