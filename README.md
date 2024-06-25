@@ -46,7 +46,7 @@ protein.to_pdb("./generation.pdb")
 # Then we can do a round trip design by inverse folding the sequence and recomputing the structure
 protein.sequence = None
 protein = model.generate(protein, GenerationConfig(track="sequence", num_steps=8))
-protein.structure = None
+protein.coordinates = None
 protein = model.generate(protein, GenerationConfig(track="structure", num_steps=8))
 protein.to_pdb("./round_tripped.pdb")
 ```
