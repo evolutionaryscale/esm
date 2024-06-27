@@ -101,6 +101,7 @@ class ESMProtein:
             entity_id=None,
             residue_index=None,
             insertion_code=None,
+            confidence=None if self.plddt is None else self.plddt.detach().cpu().numpy(),
         )
         return protein_chain
 
