@@ -1,0 +1,13 @@
+## Git Ignore List
+## Please DO NOT commit any unnecessary files!
+
+## About python
+*.pyc
+*.ipynb
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+
+## about build
+/build
+/dist
