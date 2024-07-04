@@ -679,7 +679,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             else None
         )
         mean_embedding = (
-            forward_output.embeddings[0].mean(1)  # type: ignore
+            forward_output.embeddings[0].mean(0)  # type: ignore
             if sampling_configuration.return_mean_embedding
             else None
         )
