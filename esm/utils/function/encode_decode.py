@@ -165,7 +165,11 @@ def decode_residue_annotation_tokens(
 
     for depth in range(0, C.MAX_RESIDUE_ANNOTATIONS):
         token_ids = residue_annotations_token_ids[:, depth]
-        for loc, vocab_index in torch.nonzero(token_ids).cpu().numpy():
+        nonzero_indices = torch.nonzero(token_ids).squeeze(dim=1).cpu().numpy()
+        if len(nonzero_indices) == 0:
+            continue
+        for loc in nonzero_indices:
+            vocab_index: int = token_ids[loc].item()  # type: ignore
             label = residue_annotations_tokenizer.vocabulary[vocab_index]
             if label not in [*residue_annotations_tokenizer.special_tokens, "<none>"]:
                 annotation = FunctionAnnotation(label=label, start=loc, end=loc)
