@@ -17,6 +17,7 @@ from biotite.application.dssp import DsspApp
 from biotite.database import rcsb
 from biotite.structure.io.npz import NpzFile
 from biotite.structure.io.pdb import PDBFile
+from cloudpathlib import CloudPath
 from scipy.spatial.distance import pdist, squareform
 from torch import Tensor
 
@@ -38,7 +39,7 @@ CHAIN_ID_CONST = "A"
 
 
 ArrayOrTensor = TypeVar("ArrayOrTensor", np.ndarray, Tensor)
-PathLike = Union[str, Path]
+PathLike = Union[str, Path, CloudPath]
 PathOrBuffer = Union[PathLike, io.StringIO]
 
 

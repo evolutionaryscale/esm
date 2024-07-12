@@ -83,10 +83,6 @@ class TransformerStack(nn.Module):
             pre_norm: The embedding of shape (batch_size, sequence_length, d_model).
         """
         *batch_dims, _ = x.shape
-        if sequence_id is None:
-            sequence_id = torch.ones(
-                size=batch_dims, dtype=torch.int64, device=x.device
-            )
         if chain_id is None:
             chain_id = torch.ones(size=batch_dims, dtype=torch.int64, device=x.device)
         for block in self.blocks:

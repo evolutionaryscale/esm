@@ -207,7 +207,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
         interpro_ids = []
         keywords = []
         for label in labels:
-            match = re.match(r"IPR\d+", label)
+            match = re.search(r"IPR\d+", label)
             if match and match.group() in self.interpro_to_index:
                 interpro_ids.append(match.group())
             elif label in self._tfidf.vocab_to_index:

@@ -235,12 +235,14 @@ class StructureTokenEncoder(nn.Module):
             knn_sequence_id = (
                 node_gather(sequence_id.unsqueeze(-1), knn_edges).view(-1, E)
                 if sequence_id is not None
-                else torch.zeros(L, E, dtype=torch.int64, device=coords.device)
+                else torch.zeros(B * L, E, dtype=torch.int64, device=coords.device)
             )
             knn_affine_mask = node_gather(affine_mask.unsqueeze(-1), knn_edges).view(
                 -1, E
             )
-            knn_chain_id = torch.zeros(L, E, dtype=torch.int64, device=coords.device)
+            knn_chain_id = torch.zeros(
+                B * L, E, dtype=torch.int64, device=coords.device
+            )
 
             if residue_index is None:
                 res_idxs = knn_edges.view(-1, E)

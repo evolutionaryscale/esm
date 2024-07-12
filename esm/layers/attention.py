@@ -59,12 +59,19 @@ class MultiHeadAttention(nn.Module):
             reshaper, (query_BLD, key_BLD, value_BLD)
         )
 
-        # Where True, enable participation in attention.
-        mask_BLL = seq_id.unsqueeze(-1) == seq_id.unsqueeze(-2)
-        mask_BHLL = mask_BLL.unsqueeze(1)
+        if seq_id is not None:
+            # Where True, enable participation in attention.
+            mask_BLL = seq_id.unsqueeze(-1) == seq_id.unsqueeze(-2)
+            mask_BHLL = mask_BLL.unsqueeze(1)
 
-        context_BHLD = F.scaled_dot_product_attention(
-            query_BHLD, key_BHLD, value_BHLD, mask_BHLL
-        )
+            context_BHLD = F.scaled_dot_product_attention(
+                query_BHLD, key_BHLD, value_BHLD, mask_BHLL
+            )
+        else:
+            # Shortcut, if we don't use attention biases then torch
+            # will autoselect flashattention as the implementation
+            context_BHLD = F.scaled_dot_product_attention(
+                query_BHLD, key_BHLD, value_BHLD
+            )
         context_BLD = einops.rearrange(context_BHLD, "b h s d -> b s (h d)")
         return self.out_proj(context_BLD)

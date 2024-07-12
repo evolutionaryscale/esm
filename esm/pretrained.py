@@ -21,8 +21,8 @@ ModelBuilder = Callable[[torch.device | str], nn.Module]
 
 
 def ESM3_sm_open_v0(device: torch.device | str = "cpu"):
-    model = (
-        ESM3(
+    with torch.device(device):
+        model = ESM3(
             d_model=1536,
             n_heads=24,
             v_heads=256,
@@ -30,10 +30,7 @@ def ESM3_sm_open_v0(device: torch.device | str = "cpu"):
             structure_encoder_name=ESM3_STRUCTURE_ENCODER_V0,
             structure_decoder_name=ESM3_STRUCTURE_DECODER_V0,
             function_decoder_name=ESM3_FUNCTION_DECODER_V0,
-        )
-        .to(device)
-        .eval()
-    )
+        ).eval()
     state_dict = torch.load(
         data_root() / "data/weights/esm3_sm_open_v1.pth", map_location=device
     )
@@ -42,13 +39,10 @@ def ESM3_sm_open_v0(device: torch.device | str = "cpu"):
 
 
 def ESM3_structure_encoder_v0(device: torch.device | str = "cpu"):
-    model = (
-        StructureTokenEncoder(
+    with torch.device(device):
+        model = StructureTokenEncoder(
             d_model=1024, n_heads=1, v_heads=128, n_layers=2, d_out=128, n_codes=4096
-        )
-        .to(device)
-        .eval()
-    )
+        ).eval()
     state_dict = torch.load(
         data_root() / "data/weights/esm3_structure_encoder_v0.pth", map_location=device
     )
@@ -57,9 +51,8 @@ def ESM3_structure_encoder_v0(device: torch.device | str = "cpu"):
 
 
 def ESM3_structure_decoder_v0(device: torch.device | str = "cpu"):
-    model = (
-        StructureTokenDecoder(d_model=1280, n_heads=20, n_layers=30).to(device).eval()
-    )
+    with torch.device(device):
+        model = StructureTokenDecoder(d_model=1280, n_heads=20, n_layers=30).eval()
     state_dict = torch.load(
         data_root() / "data/weights/esm3_structure_decoder_v0.pth", map_location=device
     )
@@ -68,7 +61,8 @@ def ESM3_structure_decoder_v0(device: torch.device | str = "cpu"):
 
 
 def ESM3_function_decoder_v0(device: torch.device | str = "cpu"):
-    model = FunctionTokenDecoder().to(device).eval()
+    with torch.device(device):
+        model = FunctionTokenDecoder().eval()
     state_dict = torch.load(
         data_root() / "data/weights/esm3_function_decoder_v0.pth", map_location=device
     )
@@ -84,7 +78,9 @@ LOCAL_MODEL_REGISTRY: dict[str, ModelBuilder] = {
 }
 
 
-def load_local_model(model_name: str, device: torch.device | str = "cpu") -> nn.Module:
+def load_local_model(
+    model_name: str, device: torch.device = torch.device("cpu")
+) -> nn.Module:
     if model_name not in LOCAL_MODEL_REGISTRY:
         raise ValueError(f"Model {model_name} not found in local model registry.")
     return LOCAL_MODEL_REGISTRY[model_name](device)

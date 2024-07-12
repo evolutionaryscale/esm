@@ -4,6 +4,7 @@ from collections import Counter
 from functools import cached_property
 
 import numpy as np
+from cloudpathlib import AnyPath
 from scipy import sparse
 
 
@@ -13,10 +14,10 @@ class TFIDFModel:
     """
 
     def __init__(self, vocabulary_path: str, idf_path: str):
-        with open(vocabulary_path, "r") as f:
+        with AnyPath(vocabulary_path).open("r") as f:
             self.vocabulary = f.read().strip().split("\n")
 
-        with open(idf_path, "rb") as f:
+        with AnyPath(idf_path).open("rb") as f:
             self.idf_ = np.load(f)
 
         assert self.idf_.ndim == 1

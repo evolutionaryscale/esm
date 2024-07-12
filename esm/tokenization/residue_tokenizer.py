@@ -1,10 +1,10 @@
 from functools import cached_property
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from cloudpathlib import AnyPath
 
 from esm.tokenization.tokenizer_base import EsmTokenizerBase
 from esm.utils.constants import esm3 as C
@@ -25,13 +25,13 @@ class ResidueAnnotationsTokenizer(EsmTokenizerBase):
 
     @cached_property
     def _description2label(self) -> dict[str, str]:
-        with Path(self.csv_path).open() as f:  # type: ignore
+        with AnyPath(self.csv_path).open() as f:  # type: ignore
             df = pd.read_csv(f)
         return dict(zip(df.label, df.label_clean))
 
     @cached_property
     def _labels(self) -> list[str]:
-        with Path(self.csv_path).open() as f:  # type: ignore
+        with AnyPath(self.csv_path).open() as f:  # type: ignore
             df = pd.read_csv(f)
         labels = (
             df.groupby("label_clean")["count"]

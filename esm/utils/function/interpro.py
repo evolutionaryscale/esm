@@ -5,11 +5,11 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum, auto
 from functools import cached_property
-from pathlib import Path
 
 import networkx as nx
 import numpy as np
 import pandas as pd
+from cloudpathlib import AnyPath
 
 from esm.utils.constants import esm3 as C
 
@@ -36,7 +36,7 @@ def _parse_interpro2go(path: str) -> dict[str, list[str]]:
     Returns:
         Mapping from InterPro to list of associated GO terms.
     """
-    with Path(path).open("r") as f:
+    with AnyPath(path).open("r") as f:
         text = f.read()
     df = pd.Series(text.split("\n"), name="line").to_frame()
     df = df[~df.line.str.startswith("!")]
@@ -131,7 +131,7 @@ class InterPro:
             - "type": InterProEntryType representing the type of annotation.
             - "name": Short name of the entry.
         """
-        with Path(self.entries_path).open("r") as f:
+        with AnyPath(self.entries_path).open("r") as f:
             df = pd.read_csv(f, sep="\t")
         assert all(
             col in df.columns for col in ["ENTRY_AC", "ENTRY_TYPE", "ENTRY_NAME"]
@@ -178,7 +178,7 @@ class InterPro:
     def graph(self) -> nx.DiGraph:
         """Reads the InterPro hierarchy of InterPro."""
         graph = nx.DiGraph()
-        with Path(self.hierarchy_graph_path).open("r") as f:
+        with AnyPath(self.hierarchy_graph_path).open("r") as f:
             parents = []
             for line in f:
                 ipr = line.split("::", maxsplit=1)[0]

@@ -1,3 +1,4 @@
+import os
 from functools import cache
 from pathlib import Path
 
@@ -106,6 +107,8 @@ def data_root():
     ]:
         if (p := Path(path)).exists():
             return p.parent
+    if "INFRA_PROVIDER" in os.environ:
+        return Path("")
     # Try to download from hugginface if it doesn't exist
     path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
     return path

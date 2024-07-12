@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from cloudpathlib import AnyPath
 
 from esm.layers.regression_head import RegressionHead
 from esm.layers.transformer_stack import TransformerStack
@@ -70,7 +71,7 @@ class FunctionTokenDecoder(nn.Module):
         }
         assert len(self.interpro_ids) == config.num_interpro_classes
 
-        with open(config.keyword_vocabulary_path, "r") as f:
+        with AnyPath(config.keyword_vocabulary_path).open("r") as f:
             self.keywords_vocabulary: list[str] = list(f.read().strip().split("\n"))
             assert len(self.keywords_vocabulary) == config.keyword_vocabulary_size
 
@@ -245,8 +246,8 @@ class FunctionTokenDecoder(nn.Module):
                 interpro_id = self.interpro_ids[class_index]
                 annotation = FunctionAnnotation(
                     label=interpro_id,
-                    start=position_index + 1,  # zero-index -> one-index inclusive
-                    end=position_index + 1,  # zero-index -> one-index inclusive
+                    start=position_index,  # one-index inclusive (BOS shifts indexes +1)
+                    end=position_index,  # one-index inclusive
                 )
                 annotations.append(annotation)
 
@@ -300,8 +301,8 @@ class FunctionTokenDecoder(nn.Module):
             for range_ in merge_ranges(ranges):
                 annotation = FunctionAnnotation(
                     label=keyword,
-                    start=range_.start + 1,  # zero-index -> one-index
-                    end=range_.stop + 1 - 1,  # zero-index excl -> one-index incl
+                    start=range_.start,  # one-index inclusive  (BOS shifts indexes +1)
+                    end=range_.stop - 1,  # one-index exclusive -> one-index inclusive
                 )
                 annotations.append(annotation)
 
@@ -332,8 +333,8 @@ def _merge_annotations(
         for range_ in merged_ranges:
             annotation = FunctionAnnotation(
                 label=label,
-                start=range_.start + 1,  # zero-index -> one-index
-                end=range_.stop - 1,  # zero-index excl -> one-index incl
+                start=range_.start,  # one-index inclusive  (BOS shifts indexes +1)
+                end=range_.stop - 1,  # one-index exclusive -> one-index inclusive
             )
             merged.append(annotation)
     return merged

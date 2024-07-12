@@ -189,10 +189,13 @@ def decode_sasa(
     sasa_tokens: torch.Tensor,
     sasa_tokenizer: SASADiscretizingTokenizer,
 ) -> list[float]:
-    _bos_eos_warn("SASA", sasa_tokens, sasa_tokenizer)
+    if sasa_tokens[0] != 0:
+        raise ValueError("SASA does not start with 0 corresponding to BOS token")
+    if sasa_tokens[-1] != 0:
+        raise ValueError("SASA does not end with 0 corresponding to EOS token")
     sasa_tokens = sasa_tokens[1:-1]
-
-    return sasa_tokenizer.decode_float(sasa_tokens)
+    sasa = sasa_tokens.tolist()
+    return sasa
 
 
 def decode_function_annotations(

@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from esm.sdk.api import (
+    ESMProteinTensor,
     SamplingConfig,
     SamplingTrackConfig,
 )
@@ -13,7 +14,92 @@ from esm.tokenization import (
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer,
 )
-from esm.utils.constants.esm3 import MAX_RESIDUE_ANNOTATIONS
+from esm.utils.constants.esm3 import (
+    MAX_RESIDUE_ANNOTATIONS,
+    SASA_DISCRETIZATION_BOUNDARIES,
+)
+
+# Number of dimensions for each protein tensor field without the batch dimension.
+_DIMS: dict[str, int] = {
+    "sequence": 1,
+    "structure": 1,
+    "secondary_structure": 1,
+    "sasa": 1,
+    "function": 2,
+    "residue_annotations": 2,
+    "coordinates": 3,
+}
+
+
+class _BatchedESMProteinTensor(ESMProteinTensor):
+    @staticmethod
+    def from_protein_tensor(protein: ESMProteinTensor):
+        def _maybe_unsqueeze(x: torch.Tensor | None):
+            return x.unsqueeze(0) if x is not None else None
+
+        return _BatchedESMProteinTensor(
+            sequence=_maybe_unsqueeze(protein.sequence),
+            structure=_maybe_unsqueeze(protein.structure),
+            secondary_structure=_maybe_unsqueeze(protein.secondary_structure),
+            sasa=_maybe_unsqueeze(protein.sasa),
+            function=_maybe_unsqueeze(protein.function),
+            residue_annotations=_maybe_unsqueeze(protein.residue_annotations),
+            coordinates=_maybe_unsqueeze(protein.coordinates),
+        )
+
+    def __len__(self) -> int:
+        def get_len(k, v) -> int:
+            assert len(v.shape) == _DIMS[k] + 1
+            return v.size(1)
+
+        l = self._detect_attribute(get_len, "length")
+        return l if l is not None else 0
+
+    @property
+    def batch_size(self) -> int:
+        def get_batch_size(k, v) -> int:
+            assert len(v.shape) == _DIMS[k] + 1
+            return v.size(0)
+
+        d = self._detect_attribute(get_batch_size, "batch size")
+        assert d is not None
+        return d
+
+    def slice(
+        self,
+        i: int,
+        sequence_len: int | None = None,
+    ) -> ESMProteinTensor:
+        def _maybe_slice(x: torch.Tensor | None):
+            if x is None:
+                return None
+            row = x[i]
+            if sequence_len is not None:
+                row = row[:sequence_len]
+            return row
+
+        return ESMProteinTensor(
+            sequence=_maybe_slice(self.sequence),
+            structure=_maybe_slice(self.structure),
+            secondary_structure=_maybe_slice(self.secondary_structure),
+            sasa=_maybe_slice(self.sasa),
+            function=_maybe_slice(self.function),
+            residue_annotations=_maybe_slice(self.residue_annotations),
+            coordinates=_maybe_slice(self.coordinates),
+        )
+
+    def set_slice(self, i: int, slice: ESMProteinTensor):
+        """Update the i-th slice of this tensor data class."""
+        for f in attr.fields(ESMProteinTensor):
+            s = getattr(self, f.name)
+            v = getattr(slice, f.name)
+
+            assert v is None or (
+                v is not None and s is not None
+            ), f"Trying to set a slice on None tensor ({f.name})."
+
+            if v is not None:
+                s[i, ...] = v
 
 
 def get_default_sampling_config(tokenizers: TokenizerCollection) -> SamplingConfig:
@@ -79,7 +165,8 @@ def sample_function_logits(
     temperature: float | torch.Tensor = 1.0,
     p_none_threshold: float = 0.05,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    [L, D, V] = logits.shape
+    """Works with inputs that have batch dimension."""
+    [B, L, D, V] = logits.shape
     assert D == tokenizer.depth
 
     if top_p < 1.0:
@@ -87,18 +174,26 @@ def sample_function_logits(
 
     temperature = torch.ones_like(logits[..., 0]) * temperature
 
-    log_p = F.log_softmax(logits / temperature[..., None], dim=-1)  # (L, D, V)
+    log_p = F.log_softmax(logits / temperature[..., None], dim=-1)  # (B, L, D, V)
 
     # Choose which positions have no predicted function.
-    log_p_nones = log_p[..., tokenizer.vocab_to_index["<none>"]]  # (L, D)
+    none_index = tokenizer.vocab_to_index["<none>"]
+    log_p_nones = log_p[..., none_index]  # (B, L, D)
     p_none = torch.exp(log_p_nones).mean(dim=-1)  # "Ensemble of <none> predictions"
-    where_none = p_none > p_none_threshold  # (L, )
+    where_none = p_none > p_none_threshold  # (B, L)
 
     # Set probability of <none> to 0 for all not-none positions
-    none_index = tokenizer.vocab_to_index["<none>"]
-    log_p[~where_none, :, none_index] = -torch.inf
+    batch_size, seq_len, depth = log_p.shape[:-1]
+    expanded_where_not_none = ~where_none.unsqueeze(-1).unsqueeze(-1)  # (B, L, 1, 1)
+    expanded_where_not_none = expanded_where_not_none.expand(
+        batch_size, seq_len, depth, 1
+    )  # (B, L, D, 1)
+    indices = torch.arange(log_p.shape[-1], device=log_p.device)  # (V,)
+    mask = indices == none_index  # (V,)
+    mask = expanded_where_not_none & mask  # (B, L, D, 1) x (V,) -> (B, L, D, V)
+    log_p[mask] = -torch.inf
 
-    ids = torch.argmax(log_p, dim=-1)  # (L, D)
+    ids = torch.argmax(log_p, dim=-1)  # (B, L, D)
     ids[where_none, :] = tokenizer.vocab_to_index["<none>"]
 
     return ids, log_p
@@ -110,10 +205,10 @@ def sample_residue_annotation_logits(
     # Take top residue annotations
     top_residue_annotations_idx = logits.argsort(dim=-1, descending=True)[
         ..., :MAX_RESIDUE_ANNOTATIONS
-    ]  # (L, MAX_R)
+    ]  # (B, L, MAX_R)
     top_residue_annotations_logprobs = torch.gather(
         F.logsigmoid(logits), -1, top_residue_annotations_idx
-    )  # (L, MAX_R)
+    )  # (B, L, MAX_R)
     top_residue_annotations_probs = top_residue_annotations_logprobs.exp()
     # Keep only positive predictions
     is_negative = top_residue_annotations_probs < annotation_threshold
@@ -122,6 +217,26 @@ def sample_residue_annotation_logits(
     top_residue_annotations_logprobs = top_residue_annotations_logprobs
 
     return top_residue_annotations_idx, top_residue_annotations_logprobs
+
+
+def sample_sasa_logits(
+    logits: torch.Tensor,
+    tokens: torch.Tensor,
+) -> torch.Tensor:
+    sasa_probs = torch.nn.functional.softmax(logits, dim=-1)
+    max_prob_idx = torch.argmax(sasa_probs, dim=-1)
+    sasa_bins = torch.tensor([0] + SASA_DISCRETIZATION_BOUNDARIES, dtype=torch.float)
+    sasa_bins = (sasa_bins[:-1] + sasa_bins[1:]) / 2
+    sasa_bins = sasa_bins.to(sasa_probs.device)
+
+    # Adjust sasa_values based on max_prob_idx conditions
+    sasa_value = torch.sum(sasa_probs[..., 3:-1] * sasa_bins, dim=-1)
+    sasa_value[tokens == 0] = float("-inf")
+    sasa_value[tokens == 1] = float("-inf")
+    sasa_value[tokens == 2] = float("-inf")
+    sasa_value[max_prob_idx == 18] = float("inf")
+
+    return sasa_value
 
 
 def top_p_logits(

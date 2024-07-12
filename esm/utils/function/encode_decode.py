@@ -39,7 +39,7 @@ def encode_function_annotations(
         supported_label = False
 
         # Is it an InterPro label?
-        if match := re.match(r"IPR\d+", fa.label):
+        if match := re.search(r"IPR\d+", fa.label):
             if match.group() in function_tokens_tokenizer.interpro_to_index:
                 ft_annotations.append(fa)
                 supported_label = True

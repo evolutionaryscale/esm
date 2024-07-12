@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
-PathLike = Union[str, Path]
+from cloudpathlib import CloudPath
+
+PathLike = Union[str, Path, CloudPath]
 PathOrBuffer = Union[PathLike, io.StringIO]
 
 

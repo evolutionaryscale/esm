@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Sequence, TypeVar
+from typing import Sequence
 
 import attr
 import torch
-from attr import define
+from attr import asdict, define
 
 from esm.tokenization import (
     TokenizerCollectionProtocol,
@@ -21,9 +21,13 @@ from esm.utils.types import (
 )
 
 
+class ProteinType(ABC):
+    ...
+
+
 ## Basic Types
 @define
-class ESMProtein:
+class ESMProtein(ProteinType):
     # Tracks
     sequence: str | None = None
     secondary_structure: str | None = None
@@ -101,13 +105,15 @@ class ESMProtein:
             entity_id=None,
             residue_index=None,
             insertion_code=None,
-            confidence=None if self.plddt is None else self.plddt.detach().cpu().numpy(),
+            confidence=None
+            if self.plddt is None
+            else self.plddt.detach().cpu().numpy(),
         )
         return protein_chain
 
 
 @define
-class ESMProteinTensor:
+class ESMProteinTensor(ProteinType):
     sequence: torch.Tensor | None = None
     structure: torch.Tensor | None = None
     secondary_structure: torch.Tensor | None = None
@@ -116,59 +122,33 @@ class ESMProteinTensor:
     residue_annotations: torch.Tensor | None = None
     coordinates: torch.Tensor | None = None
 
+    def _detect_attribute(self, func, msg):
+        mapped = {k: func(k, v) for k, v in asdict(self).items() if v is not None}
+        s = set(mapped.values())
+        if len(s) <= 0:
+            return None
+        if len(s) != 1:
+            raise ValueError(f"Either no tracks or inconsistent {msg}: {mapped}")
+        return next(iter(s))
+
     def __len__(self) -> int:
-        if self.sequence is not None:
-            return self.sequence.size(0)
-        elif self.structure is not None:
-            return self.structure.size(0)
-        elif self.secondary_structure is not None:
-            return self.secondary_structure.size(0)
-        elif self.sasa is not None:
-            return self.sasa.size(0)
-        elif self.coordinates is not None:
-            return self.coordinates.size(0)
-        else:
-            raise ValueError("No track to determine length from.")
+        l = self._detect_attribute(lambda _, x: x.size(0), "length")
+        return l if l is not None else 0
 
     @property
     def device(self) -> str | torch.device:
-        device_ = None
+        d = self._detect_attribute(lambda _, x: x.device, "device")
+        assert d is not None
+        return d
 
-        tracks = [f.name for f in attr.fields(ESMProteinTensor)]
-
-        for track in tracks:
-            current_track: torch.Tensor | None = getattr(self, track)
-            if current_track is not None:
-                if device_ is not None and device_ != current_track.device:
-                    raise ValueError(f"Inconsistent devices for track {track}.")
-                device_ = getattr(self, track).device
-
-        if device_ is None:
-            raise ValueError("No track to determine device from.")
-
-        return device_
-
-    def to(self, device: str | torch.device | None) -> ESMProteinTensor:
-        if device is None:
-            return self
-
-        device = torch.device(device)
-
+    def to(self, device_or_dtype: str | torch.device | torch.dtype) -> ESMProteinTensor:
         def _to(name):
             v = getattr(self, name)
             if v is not None:
-                setattr(self, name, v.to(device))
+                setattr(self, name, v.to(device_or_dtype))
 
-        for n in [
-            "sequence",
-            "structure",
-            "secondary_structure",
-            "sasa",
-            "function",
-            "residue_annotations",
-            "coordinates",
-        ]:
-            _to(n)
+        for n in attr.fields(ESMProteinTensor):
+            _to(n.name)
 
         return self
 
@@ -200,6 +180,11 @@ class ESMProteinTensor:
                 length, tokenizers.residue_annotations
             ).to(device),
         )
+
+
+@define
+class ESMProteinError(Exception, ProteinType):
+    error_msg: str
 
 
 ## High Level Endpoint Types
@@ -285,12 +270,8 @@ class ForwardAndSampleOutput(ForwardOutput):
     topk_logprob: ForwardTrackData | None = None
     # Which tokens correspond to top probability
     topk_tokens: ForwardTrackData | None = None
-
     per_residue_embedding: torch.Tensor | None = None
     mean_embedding: torch.Tensor | None = None
-
-
-ProteinType = TypeVar("ProteinType", bound=ESMProteinTensor | ESMProtein)
 
 
 class ESM3InferenceClient(ABC):
@@ -300,6 +281,14 @@ class ESM3InferenceClient(ABC):
         # completely filled out, according to the GenerationConfig provided.
         # It is a local function wrapping calls for encode -> iterative_sampling -> decode.
         # if a ESMProteinTensor is provided, encode and decode are skipped
+        raise NotImplementedError
+
+    def batch_generate(
+        self,
+        inputs: Sequence[ProteinType],
+        configs: Sequence[GenerationConfig],
+    ) -> Sequence[ProteinType]:
+        # Same as generate(...), but generates a batch of proteins at once.
         raise NotImplementedError
 
     def encode(self, input: ESMProtein) -> ESMProteinTensor:

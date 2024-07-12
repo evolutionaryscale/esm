@@ -26,9 +26,7 @@ from esm.sdk.api import (
     ForwardTrackData,
     GenerationConfig,
     ProteinType,
-    ReturnLogitsConfig,
     SamplingConfig,
-    SamplingTrackConfig,
 )
 from esm.tokenization import get_model_tokenizers
 from esm.utils import encoding
@@ -36,15 +34,16 @@ from esm.utils.constants import esm3 as C
 from esm.utils.constants.models import ESM3_OPEN_SMALL
 from esm.utils.decoding import decode_protein_tensor
 from esm.utils.generation import (
+    _batch_forward,
+    _sample_per_prompt,
+    _slice_tensor_dataclass,
     iterative_sampling_raw,
     iterative_sampling_tokens,
 )
 from esm.utils.misc import rbf
 from esm.utils.sampling import (
+    _BatchedESMProteinTensor,
     get_default_sampling_config,
-    sample_function_logits,
-    sample_logits,
-    sample_residue_annotation_logits,
 )
 from esm.utils.structure.affine3d import (
     build_affine3d_from_coordinates,
@@ -222,9 +221,9 @@ class ESM3(nn.Module, ESM3InferenceClient):
         self.structure_decoder_name = structure_decoder_name
         self.function_decoder_name = function_decoder_name
 
-        self.structure_encoder: StructureTokenEncoder | None = None  # type: ignore
-        self.structure_decoder: StructureTokenDecoder | None = None  # type: ignore
-        self.function_decoder: FunctionTokenDecoder | None = None  # type: ignore
+        self.structure_encoder: StructureTokenEncoder | None = None
+        self.structure_decoder: StructureTokenDecoder | None = None
+        self.function_decoder: FunctionTokenDecoder | None = None
 
         self.tokenizers = get_model_tokenizers(ESM3_OPEN_SMALL)
 
@@ -232,29 +231,40 @@ class ESM3(nn.Module, ESM3InferenceClient):
     def from_pretrained(
         cls,
         model_name: str = ESM3_OPEN_SMALL,
-        device: torch.device | str = "cpu",
+        device: torch.device | None = None,
     ) -> ESM3:
         from esm.pretrained import load_local_model
 
         if model_name not in [ESM3_OPEN_SMALL]:
             raise ValueError(f"Model name {model_name} is not a valid ESM3 model name.")
-        model: ESM3 = load_local_model(model_name, device=device)  # type: ignore
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = load_local_model(model_name, device=device)
+        if device.type != "cpu":
+            model = model.to(torch.bfloat16)
+        assert isinstance(model, ESM3)
         return model
 
     def get_structure_token_encoder(self) -> StructureTokenEncoder:
         if self.structure_encoder is None:
-            self.structure_encoder = self.load_model(self.structure_encoder_name)  # type: ignore
-        return self.structure_encoder  # type: ignore
+            model = self.load_model(self.structure_encoder_name)
+            assert isinstance(model, StructureTokenEncoder)
+            self.structure_encoder = model
+        return self.structure_encoder
 
     def get_structure_token_decoder(self) -> StructureTokenDecoder:
         if self.structure_decoder is None:
-            self.structure_decoder = self.load_model(self.structure_decoder_name)  # type: ignore
-        return self.structure_decoder  # type: ignore
+            model = self.load_model(self.structure_decoder_name)
+            assert isinstance(model, StructureTokenDecoder)
+            self.structure_decoder = model
+        return self.structure_decoder
 
     def get_function_token_decoder(self) -> FunctionTokenDecoder:
         if self.function_decoder is None:
-            self.function_decoder = self.load_model(self.function_decoder_name)  # type: ignore
-        return self.function_decoder  # type: ignore
+            model = self.load_model(self.function_decoder_name)
+            assert isinstance(model, FunctionTokenDecoder)
+            self.function_decoder = model
+        return self.function_decoder
 
     def load_model(self, model_name: str):
         # Lazy import from pretrained
@@ -324,12 +334,11 @@ class ESM3(nn.Module, ESM3InferenceClient):
             torch.full((1, L), tok, dtype=torch.long, device=device) if x is None else x
         )
         sequence_tokens = defaults(sequence_tokens, t.sequence.mask_token_id)
-        ss8_tokens = defaults(ss8_tokens, C.SS8_UNK_TOKEN)
-        sasa_tokens = defaults(sasa_tokens, C.SASA_UNK_TOKEN)
+        ss8_tokens = defaults(ss8_tokens, C.SS8_PAD_TOKEN)
+        sasa_tokens = defaults(sasa_tokens, C.SASA_PAD_TOKEN)
         average_plddt = defaults(average_plddt, 1).float()
         per_res_plddt = defaults(per_res_plddt, 0).float()
         chain_id = defaults(chain_id, 0)
-        sequence_id = defaults(sequence_id, 0)
 
         if residue_annotation_tokens is None:
             residue_annotation_tokens = torch.full(
@@ -384,10 +393,39 @@ class ESM3(nn.Module, ESM3InferenceClient):
 
     # The following methods are for the ESM3InferenceClient interface
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
-        if isinstance(input, ESMProtein):
-            return iterative_sampling_raw(self, input, config)
-        elif isinstance(input, ESMProteinTensor):
-            return iterative_sampling_tokens(self, input, config, self.tokenizers)
+        """Wrap around batched generation."""
+        proteins = self.batch_generate([input], [config])
+        assert len(proteins) == 1
+        return proteins[0]
+
+    def batch_generate(
+        self, inputs: list[ProteinType], configs: list[GenerationConfig]
+    ) -> list[ProteinType]:
+        assert len(inputs) == len(
+            configs
+        ), "Must have the same number of prompts and configs."
+
+        if inputs is []:
+            # Nothing to do.
+            return []
+
+        # Make sure prompts are of the same type.
+        t = type(inputs[0])
+        for i in range(1, len(inputs)):
+            assert isinstance(inputs[i], t), (
+                "Prompts must have the same type. Got "
+                f"{t.__name__ and type(inputs[i]).__name__} instead."
+            )
+
+        if isinstance(inputs[0], ESMProtein):
+            return iterative_sampling_raw(self, inputs, configs)  # type: ignore
+        elif isinstance(inputs[0], ESMProteinTensor):
+            return iterative_sampling_tokens(
+                self,
+                inputs,  # type: ignore
+                configs,
+                self.tokenizers,  # type: ignore
+            )
         else:
             raise ValueError("Input must be an ESMProtein or ESMProteinTensor")
 
@@ -486,6 +524,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
     def _forward(
         self, input: ESMProteinTensor, config: ForwardConfig = ForwardConfig()
     ) -> ForwardOutput:
+        device = torch.device(input.device)
         # Default plddt conditioning for inference. 1s where coordinates are provided.
         if input.coordinates is None:
             per_res_plddt = None
@@ -493,7 +532,12 @@ class ESM3(nn.Module, ESM3InferenceClient):
             # 1.0 if all coordinates at specific indices have valid non-nan values.
             per_res_plddt = input.coordinates.isfinite().all(dim=-1).any(dim=-1).float()
 
-        with torch.no_grad() if self.eval else contextlib.nullcontext():
+        with (
+            torch.no_grad(),  # Assume no gradients for now...
+            torch.autocast(enabled=True, device_type=device.type, dtype=torch.bfloat16)  # type: ignore
+            if device.type == "cuda"
+            else contextlib.nullcontext(),
+        ):
             output = self.forward(
                 sequence_tokens=input.sequence,
                 structure_tokens=input.structure,
@@ -508,30 +552,31 @@ class ESM3(nn.Module, ESM3InferenceClient):
                 sequence_id=None,
             )
 
-            if config.return_logits:
-                logits = ForwardTrackData(
-                    sequence=output.sequence_logits,
-                    structure=output.structure_logits,
-                    secondary_structure=output.secondary_structure_logits,
-                    sasa=output.sasa_logits,
-                    function=output.function_logits,
-                )
-            else:
-                logits = None
+        output = ESMOutput(
+            **{k: v.to(device).to(torch.float32) for k, v in vars(output).items()}
+        )
 
-            return ForwardOutput(
-                logits=logits,
-                residue_annotation_logits=output.residue_logits,
-                embeddings=output.embeddings if config.return_embeddings else None,
+        if config.return_logits:
+            logits = ForwardTrackData(
+                sequence=output.sequence_logits,
+                structure=output.structure_logits,
+                secondary_structure=output.secondary_structure_logits,
+                sasa=output.sasa_logits,
+                function=output.function_logits,
             )
+        else:
+            logits = None
+
+        return ForwardOutput(
+            logits=logits,
+            residue_annotation_logits=output.residue_logits,
+            embeddings=output.embeddings if config.return_embeddings else None,
+        )
 
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput:
         protein_tensor = attr.evolve(input)  # Make a copy
-
-        def maybe_clone(x: torch.Tensor | None) -> torch.Tensor | None:
-            return x.clone() if x is not None else None
 
         device = next(self.parameters()).device
 
@@ -551,249 +596,20 @@ class ESM3(nn.Module, ESM3InferenceClient):
                     getattr(default_protein_tensor, track.name, None),
                 )
 
-        # Preprocessing
-        sequence_length: int = -1
-        for track in [
-            "sequence",
-            "structure",
-            "secondary_structure",
-            "sasa",
-            "function",
-            "residue_annotations",
-        ]:
-            input_tensor: torch.Tensor | None = getattr(protein_tensor, track, None)
-            if input_tensor is not None:
-                # Add batch dimension if necessary
-                if track in ["sequence", "structure", "secondary_structure", "sasa"]:
-                    if len(input_tensor.size()) == 1:
-                        input_tensor = input_tensor.unsqueeze(0)  # (L,) -> (1, L)
-                elif track in ["function", "residue_annotations"]:
-                    if len(input_tensor.size()) == 2:
-                        input_tensor = input_tensor.unsqueeze(0)  # (L, O) -> (1, L, O)
-
-                # Check length consistency
-                if sequence_length == -1:
-                    sequence_length = input_tensor.size(1)
-                else:
-                    if input_tensor.size(1) != sequence_length:
-                        raise ValueError(
-                            f"Length mismatch for track {track}. Expected {sequence_length}, got {input_tensor.size(1)}"
-                        )
-
-                # Move input tensor to model device
-                input_tensor = input_tensor.to(device)
-                setattr(protein_tensor, track, input_tensor)
-
-        if protein_tensor.coordinates is not None:
-            coordinates = protein_tensor.coordinates
-            if len(coordinates.size()) == 3:
-                coordinates = coordinates.unsqueeze(0)
-            protein_tensor.coordinates = coordinates.to(device)
-            sequence_length = coordinates.size(1)
-
-        if sequence_length == -1:
+        if len(protein_tensor) <= 0:
             raise ValueError("No input data provided")
 
-        # Forward pass
-        forward_output = self._forward(
-            protein_tensor,
-            ForwardConfig(
-                ReturnLogitsConfig(
-                    sequence=True,
-                    structure=True,
-                    secondary_structure=True,
-                    sasa=True,
-                    function=True,
-                    residue_annotations=True,
-                ),
-                return_embeddings=True,
-            ),
+        # Move input protein to proper device.
+        batched_protein = _BatchedESMProteinTensor.from_protein_tensor(protein_tensor)
+        batched_protein.to(device)
+
+        forward_output: ForwardOutput = _batch_forward(self, batched_protein)
+        forward_and_sample_out: ForwardAndSampleOutput = _sample_per_prompt(
+            batched_protein,
+            forward_output,
+            sampling_config,
+            self.tokenizers,
         )
 
-        # Sampling
-        tokens_dir = {}
-        track_sampling_metadata_dir: dict[str, dict | None] = {}
-        for track in ["sequence", "structure", "secondary_structure", "sasa"]:
-            config = getattr(sampling_config, track)
-            if config is None:
-                tokens_dir[track] = maybe_clone(getattr(input, track))
-                continue
-            sampling_metadata = self._sample_track(
-                logits=getattr(forward_output.logits, track)[0, ...],
-                tokens=getattr(protein_tensor, track)[0, ...],
-                sampling_track_config=config,
-                mask_idx=getattr(self.tokenizers, track).mask_token_id,
-            )
-            tokens_dir[track] = sampling_metadata.pop("sampled_tokens")  # (L,)
-            track_sampling_metadata_dir[track] = sampling_metadata
-
-        # Sample function and residue annotations separately
-        config = getattr(sampling_config, "function")
-        if config is None:
-            tokens_dir["function"] = maybe_clone(getattr(input, "function"))
-            tokens_dir["residue_annotations"] = maybe_clone(
-                getattr(input, "residue_annotations")
-            )
-        else:
-            sampling_metadata = self._sample_function_track(
-                tokens=getattr(protein_tensor, "function")[0, ...],
-                logits=getattr(forward_output.logits, "function")[0, ...],
-                sampling_track_config=config,
-            )
-            tokens_dir["function"] = sampling_metadata.pop("sampled_tokens")  # (L, D)
-            track_sampling_metadata_dir["function"] = sampling_metadata
-
-            sampled_tokens, _ = sample_residue_annotation_logits(
-                logits=forward_output.residue_annotation_logits[0, ...]  # type: ignore
-            )
-            tokens_dir["residue_annotations"] = sampled_tokens  # (L, MAX_R)
-
-        # Format output
-        forward_and_sample_output_dir = {}
-        forward_and_sample_output_dir["protein_tensor"] = ESMProteinTensor(**tokens_dir)
-        for property in [
-            "entropy",
-            "prob",
-            "logprob",
-            "top_prob",
-            "topk_logprob",
-            "topk_tokens",
-        ]:
-            is_all_none = True
-            forward_track_data_dir = {}
-            for track in track_sampling_metadata_dir.keys():
-                values = track_sampling_metadata_dir[track]
-                if values is not None and values.get(property, None) is not None:
-                    forward_track_data_dir[track] = values.get(property, None)
-                    is_all_none = False
-            if not is_all_none:
-                forward_and_sample_output_dir[property] = ForwardTrackData(
-                    **forward_track_data_dir
-                )
-            else:
-                forward_and_sample_output_dir[property] = None
-
-        perres_embed = (
-            forward_output.embeddings[0]  # type: ignore
-            if sampling_configuration.return_per_residue_embeddings
-            else None
-        )
-        mean_embedding = (
-            forward_output.embeddings[0].mean(0)  # type: ignore
-            if sampling_configuration.return_mean_embedding
-            else None
-        )
-
-        return ForwardAndSampleOutput(
-            per_residue_embedding=perres_embed,
-            mean_embedding=mean_embedding,
-            **forward_and_sample_output_dir,
-        )
-
-    def _sample_track(
-        self,
-        logits: torch.Tensor,
-        tokens: torch.Tensor,
-        sampling_track_config: SamplingTrackConfig,
-        mask_idx: int,
-    ) -> dict[str, torch.Tensor]:
-        # Sample in all positions
-        temperature = sampling_track_config.temperature
-        sampled_tokens = sample_logits(
-            logits, temperature=temperature, top_p=sampling_track_config.top_p
-        )
-        log_probs = logits.log_softmax(-1)
-
-        # Do not sample at BOS and EOS tokens
-        sampling_mask = torch.ones_like(tokens, dtype=torch.bool)  # (L, )
-        sampling_mask[0] = False
-        sampling_mask[-1] = False
-
-        # Do not sample at special token positions but allow sampling at mask token
-        special_minus_mask = list(set(sampling_track_config.invalid_ids) - {mask_idx})
-        if len(special_minus_mask) > 0:
-            special_tokens = torch.tensor(special_minus_mask, device=tokens.device)
-            assert special_tokens.numel() > 0
-            sampling_mask = sampling_mask & (
-                tokens[..., None] != special_tokens[None, :]
-            ).all(-1)
-
-        # Keep only samples from masked positions (if specified)
-        if sampling_track_config.only_sample_masked_tokens:
-            masked_tokens = tokens == mask_idx
-            sampling_mask = sampling_mask & masked_tokens
-        sampled_tokens = torch.where(sampling_mask, sampled_tokens, tokens)
-
-        return self._compute_track_metadata(
-            sampled_tokens,
-            log_probs,
-            sampling_mask,
-            top_k=sampling_track_config.topk_logprobs,
-        )
-
-    def _sample_function_track(
-        self,
-        tokens: torch.Tensor,
-        logits: torch.Tensor,
-        sampling_track_config: SamplingTrackConfig,
-    ) -> dict[str, torch.Tensor]:
-        # Do not sample at BOS and EOS tokens
-        sampling_mask = torch.ones_like(tokens, dtype=torch.bool)
-        sampling_mask[0] = False
-        sampling_mask[-1] = False
-
-        sampled_tokens, probs = sample_function_logits(
-            logits,
-            self.tokenizers.function,
-            top_p=sampling_track_config.top_p,
-            temperature=sampling_track_config.temperature,
-        )
-
-        if sampling_track_config.only_sample_masked_tokens:
-            raise ValueError(
-                "Sampling only masked tokens is undefined for function tokens."
-            )
-
-        sampled_tokens = torch.where(sampling_mask, sampled_tokens, tokens)  # (L, D)
-
-        return self._compute_track_metadata(
-            sampled_tokens,
-            probs,
-            sampling_mask,
-            top_k=sampling_track_config.topk_logprobs,
-        )
-
-    @staticmethod
-    def _compute_track_metadata(
-        sampled_tokens: torch.Tensor,
-        log_probs: torch.Tensor,
-        sampling_mask: torch.Tensor,
-        top_k: int,
-    ) -> dict:
-        probs = torch.exp(log_probs)  # (B, L)
-        entropy = torch.distributions.Categorical(probs=probs).entropy()  # (B, L)
-
-        # Only compute probabilities for sampled tokens
-        sampled_logprob = torch.zeros_like(
-            sampled_tokens, dtype=torch.float32
-        )  # (B, L)
-        sampled_tokens_valid = sampled_tokens[sampling_mask]
-        sampled_log_probs_valid = log_probs[sampling_mask, sampled_tokens_valid]
-        sampled_logprob[sampling_mask] = sampled_log_probs_valid
-
-        # Calculate extra metadata
-        sampled_prob = torch.exp(sampled_logprob)
-        top_prob = torch.max(probs, dim=-1).values
-        topk_logprobs, topk_tokens = torch.topk(log_probs, top_k, dim=-1)
-        topk_logprobs = None if top_k == 0 else topk_logprobs
-        topk_tokens = None if top_k == 0 else topk_tokens
-
-        return {
-            "entropy": entropy,
-            "sampled_tokens": sampled_tokens,
-            "prob": sampled_prob,
-            "logprob": sampled_logprob,
-            "top_prob": top_prob,
-            "topk_logprob": topk_logprobs,
-            "topk_tokens": topk_tokens,
-        }
+        # There is only 1 prompt to sample for.
+        return _slice_tensor_dataclass(forward_and_sample_out, 0)

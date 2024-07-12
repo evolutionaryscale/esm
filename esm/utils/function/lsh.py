@@ -1,6 +1,5 @@
-from pathlib import Path
-
 import numpy as np
+from cloudpathlib import AnyPath
 
 from esm.utils.types import PathLike
 
@@ -42,7 +41,7 @@ class LSHTokenized:
     ):
         table_hyperplanes = None
         if filepath is not None:
-            filepath = Path(filepath)
+            filepath = AnyPath(filepath)
             if not filepath.exists():
                 raise FileNotFoundError(filepath)
             table_hyperplanes = np.load(filepath)  # type: ignore
@@ -83,7 +82,7 @@ class LSHBitstream:
     ):
         table_hyperplanes = None
         if filepath is not None:
-            filepath = Path(filepath)
+            filepath = AnyPath(filepath)
             if not filepath.exists():
                 raise FileNotFoundError(filepath)
             table_hyperplanes = np.load(filepath)

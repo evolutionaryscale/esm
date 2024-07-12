@@ -50,6 +50,8 @@ class GeometricReasoningOriginalImpl(nn.Module):
         self.rotation_scale_per_head = nn.Parameter(torch.zeros((self.v_heads)))
 
     def forward(self, s, affine, affine_mask, sequence_id, chain_id):
+        if sequence_id is None:
+            sequence_id = torch.zeros_like(s[..., 0], dtype=torch.int64)
         attn_bias = sequence_id.unsqueeze(-1) == sequence_id.unsqueeze(-2)
         attn_bias = attn_bias.unsqueeze(1).float()
         attn_bias = attn_bias.masked_fill(

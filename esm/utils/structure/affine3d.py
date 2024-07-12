@@ -9,11 +9,6 @@ from typing_extensions import Self
 from esm.utils.misc import fp32_autocast_context
 
 
-def maybe_compile(func, x: torch.Tensor):
-    # Sometimes, torch compile seems to give issues for CPU tensors...
-    return torch.compile(func) if x.device.type == "cuda" else func
-
-
 @T.runtime_checkable
 class Rotation(T.Protocol):
     @classmethod
@@ -154,9 +149,7 @@ class RotationMatrix(Rotation):
         x_axis: torch.Tensor, xy_plane: torch.Tensor, eps: float = 1e-12
     ) -> RotationMatrix:
         # A low eps here is necessary for good stability!
-        return RotationMatrix(
-            maybe_compile(_graham_schmidt, x_axis)(x_axis, xy_plane, eps)
-        )
+        return RotationMatrix(_graham_schmidt(x_axis, xy_plane, eps))
 
 
 @dataclass(frozen=True)
