@@ -82,8 +82,10 @@ def knn_graph(
     *,
     no_knn: int,
 ):
-    L = coords.shape[-2]
-    num_by_dist = min(no_knn, L)
+    # batch coords, different lengths
+    max_L = coords.shape[-2]
+    min_L = (~padding_mask).sum(dim=-1).min().item()
+    num_by_dist = min(no_knn, min_L)
     device = coords.device
 
     coords = coords.nan_to_num()
@@ -94,7 +96,7 @@ def knn_graph(
             sequence_id, 2
         )
     dists = (coords.unsqueeze(-2) - coords.unsqueeze(-3)).norm(dim=-1)
-    arange = torch.arange(L, device=device)
+    arange = torch.arange(max_L, device=device)
     seq_dists = (arange.unsqueeze(-1) - arange.unsqueeze(-2)).abs()
     # We only support up to a certain distance, above that, we use sequence distance
     # instead. This is so that when a large portion of the structure is masked out,
