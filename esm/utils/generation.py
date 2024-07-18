@@ -28,6 +28,7 @@ from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer,
 )
 from esm.utils.constants import esm3 as C
+from esm.utils.misc import stack_variable_length_tensors
 from esm.utils.noise_schedules import NOISE_SCHEDULE_REGISTRY
 from esm.utils.sampling import (
     _BatchedESMProteinTensor,
@@ -35,9 +36,6 @@ from esm.utils.sampling import (
     sample_logits,
     sample_residue_annotation_logits,
     sample_sasa_logits,
-)
-from evolutionaryscale.utils.tensor import (
-    stack_variable_length_tensors,
 )
 
 
