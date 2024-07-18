@@ -324,8 +324,8 @@ class ESM3(nn.Module, ESM3InferenceClient):
             torch.full((1, L), tok, dtype=torch.long, device=device) if x is None else x
         )
         sequence_tokens = defaults(sequence_tokens, t.sequence.mask_token_id)
-        ss8_tokens = defaults(ss8_tokens, C.SS8_UNK_TOKEN)
-        sasa_tokens = defaults(sasa_tokens, C.SASA_UNK_TOKEN)
+        ss8_tokens = defaults(ss8_tokens, C.SS8_PAD_TOKEN)
+        sasa_tokens = defaults(sasa_tokens, C.SASA_PAD_TOKEN)
         average_plddt = defaults(average_plddt, 1).float()
         per_res_plddt = defaults(per_res_plddt, 0).float()
         chain_id = defaults(chain_id, 0)
@@ -351,15 +351,9 @@ class ESM3(nn.Module, ESM3InferenceClient):
         ]  # In case we pass in an atom14 or atom37 repr
         affine, affine_mask = build_affine3d_from_coordinates(structure_coords)
 
-        if structure_tokens is None:
-            _, structure_tokens = self.get_structure_token_encoder().encode(
-                structure_coords
-            )
-        assert structure_tokens is not None
+        structure_tokens = defaults(structure_tokens, C.STRUCTURE_MASK_TOKEN)
         structure_tokens = (
-            structure_tokens.masked_fill(
-                (structure_tokens == -1) | ~affine_mask, C.STRUCTURE_MASK_TOKEN
-            )
+            structure_tokens.masked_fill(structure_tokens == -1, C.STRUCTURE_MASK_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_BOS_TOKEN, C.STRUCTURE_BOS_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_PAD_TOKEN, C.STRUCTURE_PAD_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_EOS_TOKEN, C.STRUCTURE_EOS_TOKEN)
