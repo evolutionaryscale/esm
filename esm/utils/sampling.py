@@ -8,7 +8,7 @@ from esm.sdk.api import (
     SamplingTrackConfig,
 )
 from esm.tokenization import (
-    TokenizerCollection,
+    TokenizerCollectionProtocol,
     get_invalid_tokenizer_ids,
 )
 from esm.tokenization.function_tokenizer import (
@@ -102,7 +102,9 @@ class _BatchedESMProteinTensor(ESMProteinTensor):
                 s[i, ...] = v
 
 
-def get_default_sampling_config(tokenizers: TokenizerCollection) -> SamplingConfig:
+def get_default_sampling_config(
+    tokenizers: TokenizerCollectionProtocol,
+) -> SamplingConfig:
     tracks = [f.name for f in attr.fields(SamplingConfig)]
     sampling_config = SamplingConfig()
     for current_track in tracks:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from functools import partial
+from typing import Callable
 
 import attr
 import einops
@@ -28,7 +29,9 @@ from esm.sdk.api import (
     ProteinType,
     SamplingConfig,
 )
-from esm.tokenization import get_model_tokenizers
+from esm.tokenization import (
+    TokenizerCollectionProtocol,
+)
 from esm.utils import encoding
 from esm.utils.constants import esm3 as C
 from esm.utils.constants.models import ESM3_OPEN_SMALL
@@ -202,9 +205,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
         n_heads: int,
         v_heads: int,
         n_layers: int,
-        structure_encoder_name: str,
-        structure_decoder_name: str,
-        function_decoder_name: str,
+        structure_encoder_fn: Callable[[torch.device | str], StructureTokenEncoder],
+        structure_decoder_fn: Callable[[torch.device | str], StructureTokenDecoder],
+        function_decoder_fn: Callable[[torch.device | str], FunctionTokenDecoder],
+        tokenizers: TokenizerCollectionProtocol,
     ):
         super().__init__()
         self.encoder = EncodeInputs(d_model)
@@ -217,15 +221,15 @@ class ESM3(nn.Module, ESM3InferenceClient):
         )
         self.output_heads = OutputHeads(d_model)
 
-        self.structure_encoder_name = structure_encoder_name
-        self.structure_decoder_name = structure_decoder_name
-        self.function_decoder_name = function_decoder_name
+        self.structure_encoder_fn = structure_encoder_fn
+        self.structure_decoder_fn = structure_decoder_fn
+        self.function_decoder_fn = function_decoder_fn
 
-        self.structure_encoder: StructureTokenEncoder | None = None
-        self.structure_decoder: StructureTokenDecoder | None = None
-        self.function_decoder: FunctionTokenDecoder | None = None
+        self._structure_encoder = None
+        self._structure_decoder = None
+        self._function_decoder = None
 
-        self.tokenizers = get_model_tokenizers(ESM3_OPEN_SMALL)
+        self.tokenizers = tokenizers
 
     @classmethod
     def from_pretrained(
@@ -245,32 +249,24 @@ class ESM3(nn.Module, ESM3InferenceClient):
         assert isinstance(model, ESM3)
         return model
 
-    def get_structure_token_encoder(self) -> StructureTokenEncoder:
-        if self.structure_encoder is None:
-            model = self.load_model(self.structure_encoder_name)
-            assert isinstance(model, StructureTokenEncoder)
-            self.structure_encoder = model
-        return self.structure_encoder
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
-    def get_structure_token_decoder(self) -> StructureTokenDecoder:
-        if self.structure_decoder is None:
-            model = self.load_model(self.structure_decoder_name)
-            assert isinstance(model, StructureTokenDecoder)
-            self.structure_decoder = model
-        return self.structure_decoder
+    def get_structure_encoder(self) -> StructureTokenEncoder:
+        if self._structure_encoder is None:
+            self._structure_encoder = self.structure_encoder_fn(self.device)
+        return self._structure_encoder
 
-    def get_function_token_decoder(self) -> FunctionTokenDecoder:
-        if self.function_decoder is None:
-            model = self.load_model(self.function_decoder_name)
-            assert isinstance(model, FunctionTokenDecoder)
-            self.function_decoder = model
-        return self.function_decoder
+    def get_structure_decoder(self) -> StructureTokenDecoder:
+        if self._structure_decoder is None:
+            self._structure_decoder = self.structure_decoder_fn(self.device)
+        return self._structure_decoder
 
-    def load_model(self, model_name: str):
-        # Lazy import from pretrained
-        from esm.pretrained import load_local_model
-
-        return load_local_model(model_name, device=next(self.parameters()).device)
+    def get_function_decoder(self) -> FunctionTokenDecoder:
+        if self._function_decoder is None:
+            self._function_decoder = self.function_decoder_fn(self.device)
+        return self._function_decoder
 
     def forward(
         self,
@@ -360,15 +356,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
         ]  # In case we pass in an atom14 or atom37 repr
         affine, affine_mask = build_affine3d_from_coordinates(structure_coords)
 
-        if structure_tokens is None:
-            _, structure_tokens = self.get_structure_token_encoder().encode(
-                structure_coords
-            )
+        structure_tokens = defaults(structure_tokens, C.STRUCTURE_MASK_TOKEN)
         assert structure_tokens is not None
         structure_tokens = (
-            structure_tokens.masked_fill(
-                (structure_tokens == -1) | ~affine_mask, C.STRUCTURE_MASK_TOKEN
-            )
+            structure_tokens.masked_fill(structure_tokens == -1, C.STRUCTURE_MASK_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_BOS_TOKEN, C.STRUCTURE_BOS_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_PAD_TOKEN, C.STRUCTURE_PAD_TOKEN)
             .masked_fill(sequence_tokens == C.SEQUENCE_EOS_TOKEN, C.STRUCTURE_EOS_TOKEN)
@@ -405,7 +396,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             configs
         ), "Must have the same number of prompts and configs."
 
-        if inputs is []:
+        if inputs == []:
             # Nothing to do.
             return []
 
@@ -469,7 +460,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
         if input.coordinates is not None:
             coordinates, _, structure_tokens = encoding.tokenize_structure(
                 input.coordinates,
-                self.get_structure_token_encoder(),
+                self.get_structure_encoder(),
                 structure_tokenizer=self.tokenizers.structure,
                 reference_sequence=input.sequence or "",
                 add_special_tokens=True,
@@ -517,8 +508,8 @@ class ESM3(nn.Module, ESM3InferenceClient):
         return decode_protein_tensor(
             input=input,
             tokenizers=self.tokenizers,
-            structure_token_decoder=self.get_structure_token_decoder(),
-            function_token_decoder=self.get_function_token_decoder(),
+            structure_token_decoder=self.get_structure_decoder(),
+            function_token_decoder=self.get_function_decoder(),
         )
 
     def _forward(

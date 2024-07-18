@@ -61,6 +61,11 @@ def decode_protein_tensor(
             track_tokenizer = getattr(tokenizers, track.name)
             if torch.all(tokens == track_tokenizer.pad_token_id):
                 setattr(input, track.name, None)
+            # If structure track has any mask tokens, do not decode.
+            if track.name == "structure" and torch.any(
+                tokens == track_tokenizer.mask_token_id
+            ):
+                setattr(input, track.name, None)
 
     if input.sequence is not None:
         sequence = decode_sequence(input.sequence, tokenizers.sequence)

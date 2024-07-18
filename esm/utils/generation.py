@@ -136,6 +136,8 @@ def _make_masked_inputs(
 
     if track == "coordinates":
         dims = (sequence_length, 3, 3)
+    elif track == "confidence":
+        dims = (sequence_length,)
     elif track == "attention_mask":
         dims = (sequence_length,)
     elif track == "function":
@@ -147,6 +149,9 @@ def _make_masked_inputs(
 
     if track == "coordinates":
         masked_tokens = torch.full(dims, torch.inf, dtype=torch.float)
+    elif track == "confidence":
+        # All-mask dummy input for confidence track.
+        masked_tokens = torch.full(dims, 0.0)
     elif track == "attention_mask":
         masked_tokens = torch.full(dims, 1, dtype=torch.bool)
     else:
@@ -302,7 +307,7 @@ def iterative_sampling_tokens(
     sequence_lengths = [len(tokens) for tokens in sampled_tokens]
     # Figure out the number of tokens to be sampled for each prompt.
     total_to_sample = []
-    for protein, seq_len, config in zip(input_tokens, sequence_lengths, configs):
+    for protein, seq_len, config in zip(sampled_tokens, sequence_lengths, configs):
         track = config.track
 
         if getattr(protein, track) is None:
@@ -324,7 +329,7 @@ def iterative_sampling_tokens(
 
     # Now stack the list to make a single batched ESMProteinTensor.
     batched_tokens = _stack_protein_tensors(
-        input_tokens,
+        sampled_tokens,
         sequence_lengths,
         tokenizers,
         devices.pop(),
@@ -365,8 +370,8 @@ def iterative_sampling_tokens(
                 forward_out, i, keep_dim=True
             )
             # Trim logits to proper sequence length for this prompt.
-            per_prompt_forward_out.logits = _trim_sequence_tensor_dataclass(
-                per_prompt_forward_out.logits,
+            per_prompt_forward_out = _trim_sequence_tensor_dataclass(
+                per_prompt_forward_out,
                 # Note(jungong) : we can not smiply use sequence_lenths[i] here,
                 # what we want is for the sequence length of the logits to match
                 # that of the prompt, which may or may not be padded, depending on
@@ -568,7 +573,7 @@ def _sample_per_prompt(
     )
     mean_embedding = (
         # [B, L, D] -> [B, D]
-        forward_output.embeddings[0].mean(dim=1)  # type: ignore
+        forward_output.embeddings.mean(dim=1)  # type: ignore
         if sampling_config.return_mean_embedding
         else None
     )

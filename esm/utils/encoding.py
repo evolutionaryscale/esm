@@ -104,7 +104,7 @@ def tokenize_structure(
         structure_tokens = F.pad(
             structure_tokens,
             (left_pad, right_pad),
-            value=structure_tokenizer.pad_token_id,
+            value=structure_tokenizer.mask_token_id,
         )
         structure_tokens[0] = structure_tokenizer.bos_token_id
         structure_tokens[-1] = structure_tokenizer.eos_token_id
@@ -186,7 +186,7 @@ def get_default_structure_tokens(
             (sequence_length + 2,),
             dtype=torch.int64,
         )
-        * structure_tokenizer.pad_token_id
+        * structure_tokenizer.mask_token_id
     )
     # Always include BOS and EOS tokens
     structure_tokens[0] = structure_tokenizer.bos_token_id

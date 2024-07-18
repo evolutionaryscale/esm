@@ -193,7 +193,9 @@ class GenerationConfig:
     track: str = ""
     invalid_ids: Sequence[int] = []
     schedule: str = "cosine"
-    num_steps: int = 8
+    # Set this to a higher value for better generation results.
+    # Note that this needs to be less than or equal to the sequence length.
+    num_steps: int = 1
     temperature: float = 1.0
     top_p: float = 1.0
     condition_on_coordinates_only: bool = True
