@@ -37,5 +37,6 @@ dependencies = [
   "cloudpathlib",
 ]
 
-[tool.setuptools]
-packages = ["esm"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["esm*"]
