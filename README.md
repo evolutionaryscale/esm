@@ -7,6 +7,7 @@ ESM3 is a *generative* masked language model. You can prompt it with partial seq
 <img src="_assets/esm3_diagram.png" alt="ESM3 Diagram" width="400" />
 
 The ESM3 architecture is highly scalable due to its transformer backbone and all-to-all reasoning over discrete token sequences. At its largest scale, ESM3 was trained with 1.07e24 FLOPs on 2.78 billion proteins and 771 billion unique tokens, and has 98 billion parameters.
+Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the pre-print (Hayes et al., 2024)](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model).
 
 Here we present `esm3-open-small`. With 1.4B parameters it is the smallest and fastest model in the family.
 ESM3-open is available under a [non-commercial license](https://www.evolutionaryscale.ai/policies/community-license-agreement), reproduced under `LICENSE.md`.
@@ -28,7 +29,7 @@ from huggingface_hub import login
 from esm.models.esm3 import ESM3
 from esm.sdk.api import ESM3InferenceClient, ESMProtein, GenerationConfig
 
-# This will prompt you to get an API key from huggingface hub, you can make one with "Read" permission.
+# Will instruct you how to get an API key from huggingface hub, make one with "Read" permission.
 login()
 
 # This will download the model weights and instantiate the model on your machine.
@@ -51,33 +52,36 @@ protein.to_pdb("./round_tripped.pdb")
 ```
 
 Congratulations, you just generated your first proteins with ESM3!
-Let's explore some more advanced prompting with the help of our notebooks.
+Let's explore some more advanced prompting with the help of our [notebooks and scripts](examples/).
 
-Open `generate.ipynb` in a Google Colaboratory interactive notebook:
+`generate.ipynb` will walk through two prompting examples (scaffolding and secondary structure editing) using the open model:
 [<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/generate.ipynb)
 
-Open `gfp_design.ipynb` in a Google Colaboratory interactive notebook:
+`gfp_design.ipynb` will walk through the more complex generation procedure we used to design esmGFP:
 [<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/gfp_design.ipynb)
 
-We also provide example scripts that show simple common workflows under `examples/`:
-* [local_generate.py](./examples/local_generate.ipynb) shows simple local GPU code for folding, inverse folding and chain of thought generation via the recommended way of calling `ESM3InferenceClient.generate()`.
+We also provide example scripts that show common workflows under `examples/`:
+* [local_generate.py](./examples/local_generate.py) shows how simple and elegant common tasks are: it shows folding, inverse folding and chain of thought generation, all by calling just `model.generate()` for iterative decoding.
 * [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
 ## Forge: Access to larger ESM3 models
-You can apply for beta access to the full family of ESM3 models at [EvolutionaryScale Forge](https://forge.evolutionaryscale.ai).
+You can apply for beta access to the full family of larger and higher capability ESM3 models at [EvolutionaryScale Forge](https://forge.evolutionaryscale.ai).
 
 We encourage users to interact with the Forge API through the python `esm` library instead of the command line.
-The python interface enables you to interactively load proteins, build prompts, and inspect generated proteins.
-Additionally, users can seamlessly swap between `esm.models.esm3.ESM3` running locally, and
-`esm.sdk.forge.ESM3ForgeInferenceClient` connecting to the Forge API.
+The python interface enables you to interactively load proteins, build prompts, and inspect generated proteins
+with the `ESMProtein` and config classes used to interact with the local model.
 
-Once the forge client is released, we'll be able to do something like:
+In any example script try to replace a local `ESM3` model with a Forge API client:
 ```py
-model: ESM3InferenceClient = ESMForgeInferenceClient("esm3_sm_open_v1").to("cuda")
+# Instead of loading the model locally on your machine:
+model: ESM3InferenceClient = ESM3.from_pretrained("esm3_sm_open_v1").to("cuda") # or "cpu"
+# just replace the line with this:
+model: ESM3InferenceClient = esm.sdk.client("esm3-md-v1", token="<your forge token>")
+# and now you're interfacing with the model running on our remote servers.
 ...
 ```
 and the exact same code will work.
-This will enable seamless access to our large 98B protein language models for protein design work.
+This enables a seamless transition from smaller and faster models, to our large 98B protein language models for protein design work.
 
 ## Responsible Development
 
