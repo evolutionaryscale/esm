@@ -53,11 +53,14 @@ protein.to_pdb("./round_tripped.pdb")
 Congratulations, you just generated your first proteins with ESM3!
 Let's explore some more advanced prompting with the help of our notebooks.
 
-Open `examples/generate.ipynb` in a Google Colaboratory interactive notebook:
+Open `generate.ipynb` in a Google Colaboratory interactive notebook:
 [<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/generate.ipynb)
 
+Open `gfp_design.ipynb` in a Google Colaboratory interactive notebook:
+[<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/gfp_design.ipynb)
+
 We also provide example scripts that show simple common workflows under `examples/`:
-* [local_client.py](./examples/local_client.py) shows simple code for folding, inverse folding and chain of thought generation via the recommended way of calling `ESM3InferenceClient.generate()`.
+* [local_generate.py](./examples/local_generate.ipynb) shows simple local GPU code for folding, inverse folding and chain of thought generation via the recommended way of calling `ESM3InferenceClient.generate()`.
 * [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
 ## Forge: Access to larger ESM3 models
