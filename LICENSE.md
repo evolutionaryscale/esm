@@ -1,5 +1,7 @@
 # EvolutionaryScale Community License Agreement
 
+This license is a reproduction of the EvolutionaryScale Community License Agreement available at <https://www.evolutionaryscale.ai/policies/community-license-agreement>.
+
 Please read this EvolutionaryScale Community License Agreement (the “**Agreement**”) carefully before using the AI Model (as defined below), which is offered by EvolutionaryScale, PBC (“**ES**”).
 
 By downloading the AI Model, or otherwise using the AI Model in any manner, You agree that You have read and agree to be bound by the terms of this Agreement. If You are accessing the AI Model on behalf of an organization or entity, You represent and warrant that You are authorized to enter into this Agreement on that organization’s or entity’s behalf and bind them to the terms of this Agreement (in which case, the references to “**You**” and “**Your**” in this Agreement, except for in this sentence, refer to that organization or entity) and that such entity is a non-commercial organization (such as a university, non-profit organization, research institute or educational or governmental body). Use of the AI Model is expressly conditioned upon Your assent to all terms of this Agreement, to the exclusion of all other terms.
@@ -29,7 +31,7 @@ In addition to other terms defined elsewhere in this Agreement, the terms below 
 
 ## Licensing Process.
 
-In connection with Your licensing of the AI Model, ES may collect, from You or automatically through Your use of the AI Model, certain registration information about You, any Legal Entity You may represent, and Your use of the AI Model. The collection of this information and ES’s policies and procedures regarding the collection, use, disclosure and security of information received are described further in ES’s Privacy Policy available at [[](https://redpanda.com/legal/privacy-policy/)https://evolutionaryscale.ai/privacy], as may be updated from time to time.
+In connection with Your licensing of the AI Model, ES may collect, from You or automatically through Your use of the AI Model, certain registration information about You, any Legal Entity You may represent, and Your use of the AI Model. The collection of this information and ES’s policies and procedures regarding the collection, use, disclosure and security of information received are described further in ES’s Privacy Policy available at <https://evolutionaryscale.ai/policies/privacy>, as may be updated from time to time.
 
 ## Redistribution.
 
@@ -52,7 +54,7 @@ You may add Your own copyright statement to Your modifications and may provide a
 
 **Use of Outputs**.  Notwithstanding anything to the contrary in this Agreement, You may not use or provide access to any Outputs or Output Derivatives to train, optimize, improve or otherwise influence the functionality or performance of any: (i) other large language model; (ii) technology for protein structure prediction; ****or (iii) other Third Party Model ****that is similar to the AI Model. You may, however, use the Outputs and Outputs Derivatives to train, optimize, improve or otherwise influence the functionality or performance of the AI Model itself and downstream Derivative Works thereof.
 
-**Additional Restrictions**.  Your use of the AI Model may also be subject to additional use restrictions communicated to You through the AI Model or otherwise, including those set forth in the ES Acceptable Use Policy available at [https://evolutionaryscale.ai/acceptable-use-policy], as may be updated and amended from time to time (the “**AUP**”), the terms of which are incorporated herein by reference. In the event of any conflict between the terms of this Agreement and the terms of the AUP, the terms that are more restrictive of Your use of the AI Model, Derivative Works, Outputs and Output Derivatives, as applicable, shall govern and control.
+**Additional Restrictions**.  Your use of the AI Model may also be subject to additional use restrictions communicated to You through the AI Model or otherwise, including those set forth in the ES Acceptable Use Policy available at <https://evolutionaryscale.ai/policies/acceptable-use-policy>, as may be updated and amended from time to time (the “**AUP**”), the terms of which are incorporated herein by reference. In the event of any conflict between the terms of this Agreement and the terms of the AUP, the terms that are more restrictive of Your use of the AI Model, Derivative Works, Outputs and Output Derivatives, as applicable, shall govern and control.
 
 ## Submission of Contributions.
 

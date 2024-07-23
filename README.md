@@ -9,7 +9,7 @@ ESM3 is a *generative* masked language model. You can prompt it with partial seq
 The ESM3 architecture is highly scalable due to its transformer backbone and all-to-all reasoning over discrete token sequences. At its largest scale, ESM3 was trained with 1.07e24 FLOPs on 2.78 billion proteins and 771 billion unique tokens, and has 98 billion parameters.
 
 Here we present `esm3-open-small`. With 1.4B parameters it is the smallest and fastest model in the family.
-ESM3-open is available under a [non-commercial license](LICENSE.md).
+ESM3-open is available under a [non-commercial license](https://www.evolutionaryscale.ai/policies/community-license-agreement), reproduced under `LICENSE.md`.
 Visit our [Discussions page](https://github.com/evolutionaryscale/esm/discussions) to get in touch, provide feedback, ask questions or share your experience with ESM3!
 
 
@@ -28,8 +28,7 @@ from huggingface_hub import login
 from esm.models.esm3 import ESM3
 from esm.sdk.api import ESM3InferenceClient, ESMProtein, GenerationConfig
 
-# This will prompt you to get an API key from huggingface hub, make one with
-# "Read" or "Write" permission and copy it back here.
+# This will prompt you to get an API key from huggingface hub, you can make one with "Read" permission.
 login()
 
 # This will download the model weights and instantiate the model on your machine.
@@ -51,10 +50,18 @@ protein = model.generate(protein, GenerationConfig(track="structure", num_steps=
 protein.to_pdb("./round_tripped.pdb")
 ```
 
-Congratulations, you just ran a chain of thought with ESM3!
-Let's explore some more advanced prompting examples:
+Congratulations, you just generated your first proteins with ESM3!
+Let's explore some more advanced prompting with the help of our notebooks.
 
-[Open examples/generate.ipynb in Colab](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/generate.ipynb)
+Open `generate.ipynb` in a Google Colaboratory interactive notebook:
+[<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/generate.ipynb)
+
+Open `gfp_design.ipynb` in a Google Colaboratory interactive notebook:
+[<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/gfp_design.ipynb)
+
+We also provide example scripts that show simple common workflows under `examples/`:
+* [local_generate.py](./examples/local_generate.ipynb) shows simple local GPU code for folding, inverse folding and chain of thought generation via the recommended way of calling `ESM3InferenceClient.generate()`.
+* [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
 ## Forge: Access to larger ESM3 models
 You can apply for beta access to the full family of ESM3 models at [EvolutionaryScale Forge](https://forge.evolutionaryscale.ai).
@@ -76,7 +83,7 @@ This will enable seamless access to our large 98B protein language models for pr
 
 EvolutionaryScale is a public benefit company. Our mission is to develop artificial intelligence to understand biology for the benefit of human health and society, through partnership with the scientific community, and open, safe, and responsible research. Inspired by the history of our field as well as [new principles and recommendations](https://responsiblebiodesign.ai/), we have created a Responsible Development Framework to guide our work towards our mission with transparency and clarity.
 
-The core tenants of our framework are
+The core tenets of our framework are
 
 - We will communicate the benefits and risks of our research
 - We will proactively and rigorously evaluate the risk of our models before public deployment
@@ -98,9 +105,9 @@ With this in mind, we have performed a variety of mitigations for `esm3-sm-open-
 
    2. without attribution to EvolutionaryScale and this Community License Agreement; or
 
-   3. to **train** any other **large language model**, any technology for protein representation learning or protein generation or any other AI-powered third party model **similar to EvolutionaryScale’s AI Model**, even for non-commercial usage.
+   3. to **train** a AI-powered third party model **similar to EvolutionaryScale’s AI Model**, even for non-commercial usage. You may, however, create **Derivative Works** of ESM3, for example by finetuning or adding model layers.
 
-3. You **can publish, share and adapt** the EvolutionaryScale AI Model and its outputs for **non-commercial purposes** in accordance with the Community License Agreement, including the requirement to **restrict** the usage of any reproductions and copies **by, on behalf of or for a commercial entity** or **for any commercial purpose**.
+3. You **can publish, share and adapt** the EvolutionaryScale AI Model and its outputs for **non-commercial purposes** in accordance with the Community License Agreement, including a **non-commercial restriction** on the adapted model.
 
 
-Please refer to our [non-commercial license](LICENSE.md) for details.
+Please read our non-commercial [Community License Agreement](https://www.evolutionaryscale.ai/policies/community-license-agreement) reproduced under [./LICENSE.md](LICENSE.md) before using ESM3.

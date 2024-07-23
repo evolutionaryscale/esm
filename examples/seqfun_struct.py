@@ -67,6 +67,8 @@ def decode(sequence, output, sequence_tokens):
     function_decoder = ESM3_function_decoder_v0("cuda")
     function_tokenizer = EsmFunctionTokenizer()
 
+    # Generally not recommended to just argmax the logits, decode iteratively!
+    # For quick demonstration only:
     structure_tokens = torch.argmax(output.structure_logits, dim=-1)
     structure_tokens = (
         structure_tokens.where(sequence_tokens != 0, 4098)  # BOS
@@ -116,6 +118,8 @@ def decode(sequence, output, sequence_tokens):
 
 
 if __name__ == "__main__":
+    # Get raw output of model.forward:
     sequence, output, sequence_tokens = main()
     torch.cuda.empty_cache()
+    # And then decode from tokenized representation to outputs:
     decode(sequence, output, sequence_tokens)
