@@ -7,13 +7,15 @@ import numpy as np
 from cloudpathlib import AnyPath
 from scipy import sparse
 
+from esm.utils.types import PathLike
+
 
 class TFIDFModel:
     """Term-Frequency / Inverse Document Frequency (TF-IDF) model.
     Mimics sklearn.feature_extraction.text.TfidfVectorizer with sublinear_tf=True
     """
 
-    def __init__(self, vocabulary_path: str, idf_path: str):
+    def __init__(self, vocabulary_path: PathLike, idf_path: PathLike):
         with AnyPath(vocabulary_path).open("r") as f:
             self.vocabulary = f.read().strip().split("\n")
 

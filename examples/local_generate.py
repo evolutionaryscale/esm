@@ -46,8 +46,7 @@ def main(client: ESM3InferenceClient):
         protein,
         GenerationConfig(track="sequence", num_steps=8, temperature=0.7),
     )
-    assert isinstance(protein, ESMProtein)
-    print(protein.sequence)
+    assert isinstance(protein, ESMProtein), f"ESMProtein was expected but got {protein}"
 
     # Folding
     protein = get_sample_protein()
@@ -60,7 +59,9 @@ def main(client: ESM3InferenceClient):
         protein,
         GenerationConfig(track="structure", schedule="cosine", num_steps=num_steps),
     )
-    assert isinstance(folded_protein, ESMProtein)
+    assert isinstance(
+        folded_protein, ESMProtein
+    ), f"ESMProtein was expected but got {protein}"
     folded_protein.to_pdb("./sample_folded.pdb")
 
     # Inverse folding
@@ -82,8 +83,9 @@ def main(client: ESM3InferenceClient):
         protein,
         GenerationConfig(track="function", schedule="cosine", num_steps=num_steps),
     )
-    assert isinstance(protein_with_function, ESMProtein)
-    print(protein_with_function.function_annotations)
+    assert isinstance(
+        protein_with_function, ESMProtein
+    ), f"{protein_with_function} is not an ESMProtein"
 
     # Chain of Thought (Function -> Secondary Structure -> Structure -> Sequence)
     cot_protein = get_sample_protein()
@@ -96,10 +98,14 @@ def main(client: ESM3InferenceClient):
             cot_protein_tensor,
             GenerationConfig(track=cot_track, schedule="cosine", num_steps=10),
         )
-    assert isinstance(cot_protein_tensor, ESMProteinTensor)
+    assert isinstance(
+        cot_protein_tensor, ESMProteinTensor
+    ), f"ESMProteinTensor was expected but got {cot_protein_tensor}"
     cot_protein = client.decode(cot_protein_tensor)
 
-    assert isinstance(cot_protein, ESMProtein)
+    assert isinstance(
+        cot_protein, ESMProtein
+    ), f"ESMProtein was expected but got {cot_protein}"
     cot_protein.to_pdb("./sample_cot.pdb")
 
     # Batch examples.
@@ -122,7 +128,7 @@ def main(client: ESM3InferenceClient):
     proteins = client.batch_generate(proteins, configs)
     # Now write sequence and structure to PDB files.
     for i, p in enumerate(proteins):
-        assert isinstance(p, ESMProtein)
+        assert isinstance(p, ESMProtein), f"ESMProtein was expected but got {p}"
         p.to_pdb(f"./batch_gen_{i}.pdb")
 
     # Batch generation returns ESMProteinError for specific prompts that have issues.
@@ -137,9 +143,12 @@ def main(client: ESM3InferenceClient):
     # Should still get results. But third result is a ESMProteinError.
     for i, p in enumerate(proteins):
         if i == 2:
-            assert isinstance(p, ESMProteinError)
+            assert isinstance(
+                p, ESMProteinError
+            ), f"ESMProteinError was expected but got {p}"
+
         else:
-            assert isinstance(p, ESMProtein)
+            assert isinstance(p, ESMProtein), f"ESMProtein was expected but got {p}"
 
 
 if __name__ == "__main__":

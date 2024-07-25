@@ -15,7 +15,11 @@ from esm.tokenization.tokenizer_base import EsmTokenizerBase
 from esm.utils.constants import esm3 as C
 from esm.utils.function import interpro, lsh, tfidf
 from esm.utils.misc import stack_variable_length_tensors
-from esm.utils.types import FunctionAnnotation
+from esm.utils.types import FunctionAnnotation, PathLike
+
+
+def _default_data_path(x: PathLike | None, d: PathLike) -> PathLike:
+    return x if x is not None else C.data_root() / d
 
 
 class InterProQuantizedTokenizer(EsmTokenizerBase):
@@ -30,11 +34,11 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
         self,
         depth: int = 8,
         lsh_bits_per_token: int = 8,
-        lsh_path: str | None = None,
-        keyword_vocabulary_path: str | None = None,
-        keyword_idf_path: str | None = None,
-        interpro_entry_path: str | None = None,
-        interpro2keywords_path: str | None = None,
+        lsh_path: PathLike | None = None,
+        keyword_vocabulary_path: PathLike | None = None,
+        keyword_idf_path: PathLike | None = None,
+        interpro_entry_path: PathLike | None = None,
+        interpro2keywords_path: PathLike | None = None,
     ):
         """Constructs function tokenizer.
 
@@ -49,30 +53,35 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
             interpro2keywords_path: path to CSV mapping InterPro IDs to function keywords.
         """
         self.depth = depth
-        default = lambda x, d: x if x is not None else C.data_root() / d
 
-        self.keyword_vocabulary_path = default(
+        self.keyword_vocabulary_path = _default_data_path(
             keyword_vocabulary_path, C.KEYWORDS_VOCABULARY
         )
-        self.keyword_idf_path = default(keyword_idf_path, C.KEYWORDS_IDF)
+        self.keyword_idf_path = _default_data_path(keyword_idf_path, C.KEYWORDS_IDF)
 
-        self._interpro2keywords_path = default(
+        self._interpro2keywords_path = _default_data_path(
             interpro2keywords_path, C.INTERPRO2KEYWORDS
         )
         self.interpro_ = interpro.InterPro(
-            entries_path=default(interpro_entry_path, C.INTERPRO_ENTRY)
+            entries_path=_default_data_path(interpro_entry_path, C.INTERPRO_ENTRY)
         )
 
+        self.lsh_path = lsh_path
+        self.lsh_bits_per_token = lsh_bits_per_token
         self.lsh_vocab_size = 1 << lsh_bits_per_token
-        self._lsh = lsh.LSHTokenized(
-            lsh_bits_per_token,
-            len(self.keyword_vocabulary),
-            self.depth,
-            default(lsh_path, C.LSH_TABLE_PATHS["8bit"]),
-        )
 
         # This is the offset into the vocabulary where LSH tokens start.
         self._lsh_token_vocab_offset = len(self.special_tokens) + 1  # +1 for <none>
+
+    @cached_property
+    def _lsh(self) -> lsh.LSHTokenized:
+        """Locality sensitive hash for function annotations."""
+        return lsh.LSHTokenized(
+            self.lsh_bits_per_token,
+            len(self.keyword_vocabulary),
+            self.depth,
+            _default_data_path(self.lsh_path, C.LSH_TABLE_PATHS["8bit"]),
+        )
 
     @cached_property
     def interpro2keywords(self) -> dict[str, list[str]]:

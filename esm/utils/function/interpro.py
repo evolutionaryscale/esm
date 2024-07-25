@@ -7,11 +7,11 @@ from enum import IntEnum, auto
 from functools import cached_property
 
 import networkx as nx
-import numpy as np
 import pandas as pd
 from cloudpathlib import AnyPath
 
 from esm.utils.constants import esm3 as C
+from esm.utils.types import PathLike
 
 
 def parse_go_terms(text: str) -> list[str]:
@@ -88,23 +88,14 @@ class InterProEntry:
     description: str | None = None
 
 
-@dataclass(frozen=True)
-class InterProRangeAnnotation:
-    """Represents a InterPro annotation along a range of residues in a protein."""
-
-    interpro_accession: str
-    start_idx: int
-    end_idx: int
-
-
 class InterPro:
     """Convenience class interacting with InterPro ontology/data."""
 
     def __init__(
         self,
-        entries_path: str | None = None,
-        hierarchy_path: str | None = None,
-        interpro2go_path: str | None = None,
+        entries_path: PathLike | None = None,
+        hierarchy_path: PathLike | None = None,
+        interpro2go_path: PathLike | None = None,
     ):
         """Constructs interface to query InterPro entries."""
         default = lambda x, d: x if x is not None else d
@@ -190,56 +181,3 @@ class InterPro:
                     graph.add_edge(ipr_strip, parents[-1])
                 parents.append(ipr_strip)
         return graph
-
-
-def parse_interpro_features(
-    interpro_accessions: list[str],
-    interpro_starts: list[int],
-    interpro_ends: list[int],
-) -> list[InterProRangeAnnotation]:
-    """Parses raw InterPro ranges.
-
-    Args:
-        interpro_accessions: list of InterPro accessions
-        interpro_starts: list of one-indexed inclusive residue locations where the
-          annotation from `interpro_accesisons` begin.
-        interpro_ends: list of one-indexed *inclusive* residue locations where the
-          annotation from `interpro_accesisons` end.
-    Returns:
-        Collated InterProRangeAnnotations. NOTE that index conversion will convert range
-        bounds to zero-indexed [inclusive, exclusive) start/end indices.
-    """
-    assert len(interpro_accessions) == len(interpro_starts) == len(interpro_ends)
-
-    # Residue locations from Uniprot/InterPro are [inclusive, inclusive] and 1-index.
-    start_idcs = np.array(interpro_starts).astype(int)
-    end_idcs = np.array(interpro_ends).astype(int)
-
-    # We want to use Python's convention of [inclusive, exclusive) and 0-indexing.
-    # Interpro residue indices are [inclusive, inclusive] and 1-indexing.
-    # The conversion ends up being:
-    #   ```python
-    #   end_idcs += 1  # [inclusive, inclusive] -> [inclusive, exclusive)
-    #   start_idcs -= 1  # 1 -> 0 indexing
-    #   end_idcs -= 1  # 1 -> 0 indexing
-    #   ```
-    # Which simply results in:
-    start_idcs -= 1
-
-    ranges = []
-    for interpro_accession, start_idx, end_idx in zip(
-        interpro_accessions, start_idcs, end_idcs
-    ):
-        # NOTE: Skip unintegrated Interpro labels, for now.
-        if interpro_accession == "-":
-            continue
-
-        ranges.append(
-            InterProRangeAnnotation(
-                interpro_accession=interpro_accession,
-                start_idx=start_idx,
-                end_idx=end_idx,
-            )
-        )
-
-    return ranges

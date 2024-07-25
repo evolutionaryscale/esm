@@ -27,3 +27,7 @@ class FunctionAnnotation:
 
     def to_tuple(self) -> tuple[str, int, int]:
         return self.label, self.start, self.end
+
+    def __len__(self) -> int:
+        """Length of the annotation."""
+        return self.end - self.start + 1

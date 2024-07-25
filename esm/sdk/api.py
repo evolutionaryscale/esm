@@ -31,7 +31,7 @@ class ESMProtein(ProteinType):
     # Tracks
     sequence: str | None = None
     secondary_structure: str | None = None
-    sasa: list[float | str | None] | None = None
+    sasa: list[int | float | None] | None = None
     function_annotations: list[FunctionAnnotation] | None = None
     coordinates: torch.Tensor | None = None
     # Metrics
@@ -87,7 +87,7 @@ class ESMProtein(ProteinType):
             )
 
     def to_pdb(self, pdb_path: PathLike) -> None:
-        protein_chain = self.to_protein_chain()
+        protein_chain = self.to_protein_chain().infer_oxygen()
         protein_chain.to_pdb(pdb_path)
 
     def to_pdb_string(self) -> str:
@@ -100,7 +100,7 @@ class ESMProtein(ProteinType):
         protein_chain = ProteinChain.from_atom37(
             atom37_positions=self.coordinates.to("cpu").numpy(),
             id=None,
-            sequence=self.sequence,
+            sequence=None if self.sequence is None else self.sequence.replace("_", "X"),
             chain_id=None,
             entity_id=None,
             residue_index=None,

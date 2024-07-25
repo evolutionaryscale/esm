@@ -7,30 +7,56 @@ from esm.pretrained import (
     ESM3_function_decoder_v0,
     ESM3_sm_open_v0,
     ESM3_structure_decoder_v0,
+    ESM3_structure_encoder_v0,
 )
+from esm.tokenization import get_model_tokenizers
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer as EsmFunctionTokenizer,
 )
 from esm.tokenization.sequence_tokenizer import (
     EsmSequenceTokenizer,
 )
-from esm.utils.constants.esm3 import (
-    SEQUENCE_MASK_TOKEN,
-)
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import FunctionAnnotation
 
 
 @torch.no_grad()
-def main():
+def inverse_folding_example():
     tokenizer = EsmSequenceTokenizer()
-    function_tokenizer = EsmFunctionTokenizer()
+    encoder = ESM3_structure_encoder_v0("cuda")
+    model = ESM3_sm_open_v0("cuda")
+
+    chain = ProteinChain.from_pdb("esm/data/1utn.pdb")
+    coords, plddt, residue_index = chain.to_structure_encoder_inputs()
+    coords = coords.cuda()
+    plddt = plddt.cuda()
+    residue_index = residue_index.cuda()
+    _, structure_tokens = encoder.encode(coords, residue_index=residue_index)
+
+    # Add BOS/EOS padding
+    coords = F.pad(coords, (0, 0, 0, 0, 1, 1), value=torch.inf)
+    plddt = F.pad(plddt, (1, 1), value=0)
+    structure_tokens = F.pad(structure_tokens, (1, 1), value=0)
+    structure_tokens[:, 0] = 4098
+    structure_tokens[:, -1] = 4097
+
+    output = model.forward(
+        structure_coords=coords, per_res_plddt=plddt, structure_tokens=structure_tokens
+    )
+    sequence_tokens = torch.argmax(output.sequence_logits, dim=-1)
+    sequence = tokenizer.decode(sequence_tokens[0])
+    print(sequence)
+
+
+@torch.no_grad()
+def conditioned_prediction_example():
+    tokenizers = get_model_tokenizers()
 
     model = ESM3_sm_open_v0("cuda")
 
     # PDB 1UTN
     sequence = "MKTFIFLALLGAAVAFPVDDDDKIVGGYTCGANTVPYQVSLNSGYHFCGGSLINSQWVVSAAHCYKSGIQVRLGEDNINVVEGNEQFISASKSIVHPSYNSNTLNNDIMLIKLKSAASLNSRVASISLPTSCASAGTQCLISGWGNTKSSGTSYPDVLKCLKAPILSDSSCKSAYPGQITSNMFCAGYLEGGKDSCQGDSGGPVVCSGKLQGIVSWGSGCAQKNKPGVYTKVCNYVSWIKQTIASN"
-    tokens = tokenizer.encode(sequence)
+    tokens = tokenizers.sequence.encode(sequence)
 
     # Calculate the number of tokens to replace, excluding the first and last token
     num_to_replace = int((len(tokens) - 2) * 0.75)
@@ -39,8 +65,9 @@ def main():
     indices_to_replace = random.sample(range(1, len(tokens) - 1), num_to_replace)
 
     # Replace selected indices with 32
+    assert tokenizers.sequence.mask_token_id is not None
     for idx in indices_to_replace:
-        tokens[idx] = SEQUENCE_MASK_TOKEN
+        tokens[idx] = tokenizers.sequence.mask_token_id
     sequence_tokens = torch.tensor(tokens, dtype=torch.int64)
 
     function_annotations = [
@@ -48,8 +75,8 @@ def main():
         FunctionAnnotation(label="peptidase", start=100, end=114),
         FunctionAnnotation(label="chymotrypsin", start=190, end=202),
     ]
-    function_tokens = function_tokenizer.tokenize(function_annotations, len(sequence))
-    function_tokens = function_tokenizer.encode(function_tokens)
+    function_tokens = tokenizers.function.tokenize(function_annotations, len(sequence))
+    function_tokens = tokenizers.function.encode(function_tokens)
 
     function_tokens = function_tokens.cuda().unsqueeze(0)
     sequence_tokens = sequence_tokens.cuda().unsqueeze(0)
@@ -118,8 +145,9 @@ def decode(sequence, output, sequence_tokens):
 
 
 if __name__ == "__main__":
-    # Get raw output of model.forward:
-    sequence, output, sequence_tokens = main()
+    inverse_folding_example()
+
+    sequence, output, sequence_tokens = conditioned_prediction_example()
     torch.cuda.empty_cache()
     # And then decode from tokenized representation to outputs:
     decode(sequence, output, sequence_tokens)

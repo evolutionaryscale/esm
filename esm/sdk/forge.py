@@ -27,11 +27,22 @@ def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
 
 
 class ESM3ForgeInferenceClient(ESM3InferenceClient):
-    def __init__(self, model, url, token):
+    def __init__(
+        self,
+        model: str,
+        url: str = "https://forge.evolutionaryscale.ai",
+        token: str = "",
+        request_timeout: int | None = None,
+    ):
+        if token == "":
+            raise RuntimeError(
+                "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
+            )
         self.model = model
         self.url = url
         self.token = token
         self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.request_timeout = request_timeout
 
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
         if isinstance(input, ESMProtein):
@@ -39,7 +50,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         elif isinstance(input, ESMProteinTensor):
             output = self.__generate_protein_tensor(input, config)
         else:
-            return ESMProteinError(error_msg=f"Unkonw input type {type(input)}")
+            return ESMProteinError(error_msg=f"Unknown input type {type(input)}")
 
         if (
             isinstance(output, ESMProtein)
@@ -86,7 +97,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         req = {}
         req["sequence"] = input.sequence
         req["secondary_structure"] = input.secondary_structure
-        req["sasa"] = maybe_list(input.sasa)
+        req["sasa"] = input.sasa
         if input.function_annotations is not None:
             req["function"] = [x.to_tuple() for x in input.function_annotations]
         req["coordinates"] = maybe_list(input.coordinates, convert_nan_to_none=True)
@@ -178,6 +189,13 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         req = {}
         sampling_config = {}
         embedding_config = None  # TODO(zeming)
+        if (
+            sampling_configuration.return_mean_embedding
+            or sampling_configuration.return_per_residue_embeddings
+        ):
+            print(
+                "Warning: return_mean_embedding and return_per_residue_embeddings are not supported by Forge."
+            )
 
         req["sequence"] = maybe_list(input.sequence)
         req["structure"] = maybe_list(input.structure)
@@ -322,6 +340,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             f"{self.url}/api/v1/{endpoint}",
             json=request,
             headers=self.headers,
+            timeout=self.request_timeout,
         )
 
         if not response.ok:

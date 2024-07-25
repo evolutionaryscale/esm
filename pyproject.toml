@@ -21,7 +21,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch>=2.0.0",
+  "torch>=2.2.0",
   "torchvision",
   "torchtext",
   "transformers",

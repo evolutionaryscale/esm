@@ -256,7 +256,11 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
         torch.tensor((step + 1) / config.num_steps)
     )
     num_tokens_masked_after_this_step = (
-        perc_masked_after_this_step * total_to_sample
+        # To avoid rounding errors, add a small epsilon.
+        # NOTE: Tensor.round does not cast to int,
+        # so it actually leads to rounding down.
+        # e.g. tensor(67.0000).int() = 66
+        perc_masked_after_this_step * total_to_sample + 0.1
     ).int()
     num_to_sample = still_masked - num_tokens_masked_after_this_step
 

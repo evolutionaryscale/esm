@@ -64,7 +64,8 @@ class FunctionTokenDecoder(nn.Module):
         self.config = config
 
         # Get the supported set of InterPro ids.
-        df = pd.read_csv(config.interpro_entry_list, sep="\t")
+        with AnyPath(config.interpro_entry_list).open("r") as f:
+            df = pd.read_csv(f, sep="\t")
         self.interpro_ids = sorted(df.ENTRY_AC)
         self.interpro2index = {
             interpro_id: i for i, interpro_id in enumerate(self.interpro_ids)
