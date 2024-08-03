@@ -22,10 +22,10 @@ from esm.sdk.api import (
     ESMProtein,
     ESMProteinTensor,
     ForwardAndSampleOutput,
-    ForwardConfig,
-    ForwardOutput,
     ForwardTrackData,
     GenerationConfig,
+    LogitsConfig,
+    LogitsOutput,
     ProteinType,
     SamplingConfig,
 )
@@ -47,6 +47,7 @@ from esm.utils.misc import rbf
 from esm.utils.sampling import (
     _BatchedESMProteinTensor,
     get_default_sampling_config,
+    validate_sampling_config,
 )
 from esm.utils.structure.affine3d import (
     build_affine3d_from_coordinates,
@@ -512,9 +513,9 @@ class ESM3(nn.Module, ESM3InferenceClient):
             function_token_decoder=self.get_function_decoder(),
         )
 
-    def _forward(
-        self, input: ESMProteinTensor, config: ForwardConfig = ForwardConfig()
-    ) -> ForwardOutput:
+    def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
         device = torch.device(input.device)
         # Default plddt conditioning for inference. 1s where coordinates are provided.
         if input.coordinates is None:
@@ -547,26 +548,27 @@ class ESM3(nn.Module, ESM3InferenceClient):
             **{k: v.to(device).to(torch.float32) for k, v in vars(output).items()}
         )
 
-        if config.return_logits:
-            logits = ForwardTrackData(
-                sequence=output.sequence_logits,
-                structure=output.structure_logits,
-                secondary_structure=output.secondary_structure_logits,
-                sasa=output.sasa_logits,
-                function=output.function_logits,
-            )
-        else:
-            logits = None
-
-        return ForwardOutput(
-            logits=logits,
-            residue_annotation_logits=output.residue_logits,
+        return LogitsOutput(
+            logits=ForwardTrackData(
+                sequence=output.sequence_logits if config.sequence else None,
+                structure=output.structure_logits if config.structure else None,
+                secondary_structure=output.secondary_structure_logits
+                if config.secondary_structure
+                else None,
+                sasa=output.sasa_logits if config.sasa else None,
+                function=output.function_logits if config.function else None,
+            ),
+            residue_annotation_logits=output.residue_logits
+            if config.residue_annotations
+            else None,
             embeddings=output.embeddings if config.return_embeddings else None,
         )
 
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput:
+        validate_sampling_config(sampling_configuration, on_invalid="warn")
+
         protein_tensor = attr.evolve(input)  # Make a copy
 
         device = next(self.parameters()).device
@@ -594,10 +596,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
         batched_protein = _BatchedESMProteinTensor.from_protein_tensor(protein_tensor)
         batched_protein.to(device)
 
-        forward_output: ForwardOutput = _batch_forward(self, batched_protein)
+        logits_output: LogitsOutput = _batch_forward(self, batched_protein)
         forward_and_sample_out: ForwardAndSampleOutput = _sample_per_prompt(
             batched_protein,
-            forward_output,
+            logits_output,
             sampling_config,
             self.tokenizers,
         )

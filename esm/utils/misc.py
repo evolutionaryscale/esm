@@ -1,8 +1,11 @@
 import math
+from collections import defaultdict
 from typing import ContextManager, Sequence, TypeVar
 
 import numpy as np
 import torch
+
+from esm.utils.types import FunctionAnnotation
 
 MAX_SUPPORTED_DISTANCE = 1e6
 
@@ -215,6 +218,37 @@ def merge_ranges(ranges: list[range], merge_gap_max: int | None = None) -> list[
                 merged[-1] = range(last.start, max(last.stop, r.stop))
             else:
                 merged.append(r)
+    return merged
+
+
+def merge_annotations(
+    annotations: list[FunctionAnnotation],
+    merge_gap_max: int | None = None,
+) -> list[FunctionAnnotation]:
+    """Merges annotations into non-overlapping segments.
+
+    Args:
+        annotations: annotations to merge.
+        merge_gap_max: optionally merge neighboring ranges that are separated by a gap
+          no larger than this size.
+    Returns:
+        non-overlapping annotations with gaps merged.
+    """
+    grouped: dict[str, list[range]] = defaultdict(list)
+    for a in annotations:
+        # +1 since FunctionAnnotation.end is inlcusive.
+        grouped[a.label].append(range(a.start, a.end + 1))
+
+    merged = []
+    for label, ranges in grouped.items():
+        merged_ranges = merge_ranges(ranges, merge_gap_max=merge_gap_max)
+        for range_ in merged_ranges:
+            annotation = FunctionAnnotation(
+                label=label,
+                start=range_.start,
+                end=range_.stop - 1,  # convert range.stop exclusive -> inclusive.
+            )
+            merged.append(annotation)
     return merged
 
 

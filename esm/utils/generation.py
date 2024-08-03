@@ -12,11 +12,10 @@ from esm.sdk.api import (
     ESMProteinError,
     ESMProteinTensor,
     ForwardAndSampleOutput,
-    ForwardConfig,
-    ForwardOutput,
     ForwardTrackData,
     GenerationConfig,
-    ReturnLogitsConfig,
+    LogitsConfig,
+    LogitsOutput,
     SamplingConfig,
     SamplingTrackConfig,
 )
@@ -370,7 +369,7 @@ def iterative_sampling_tokens(
             per_prompt_cur_sampled = _BatchedESMProteinTensor.from_protein_tensor(
                 batched_tokens.slice(i)
             )
-            per_prompt_forward_out: ForwardOutput = _slice_tensor_dataclass(
+            per_prompt_forward_out: LogitsOutput = _slice_tensor_dataclass(
                 forward_out, i, keep_dim=True
             )
             # Trim logits to proper sequence length for this prompt.
@@ -465,17 +464,15 @@ def _batch_forward(
     protein: _BatchedESMProteinTensor,
 ):
     # Forward pass
-    return client._forward(
+    return client.logits(
         protein,
-        ForwardConfig(
-            ReturnLogitsConfig(
-                sequence=True,
-                structure=True,
-                secondary_structure=True,
-                sasa=True,
-                function=True,
-                residue_annotations=True,
-            ),
+        LogitsConfig(
+            sequence=True,
+            structure=True,
+            secondary_structure=True,
+            sasa=True,
+            function=True,
+            residue_annotations=True,
             return_embeddings=True,
         ),
     )
@@ -483,7 +480,7 @@ def _batch_forward(
 
 def _sample_per_prompt(
     protein: _BatchedESMProteinTensor,
-    forward_output: ForwardOutput,
+    logits_output: LogitsOutput,
     sampling_config: SamplingConfig,
     tokenizers: TokenizerCollectionProtocol,
 ) -> ForwardAndSampleOutput:
@@ -499,7 +496,7 @@ def _sample_per_prompt(
             tokens_dir[track] = maybe_clone(getattr(protein, track))
             continue
         sampling_metadata = _sample_track(
-            logits=getattr(forward_output.logits, track),
+            logits=getattr(logits_output.logits, track),
             tokens=getattr(protein, track),
             sampling_track_config=config,
             mask_idx=getattr(tokenizers, track).mask_token_id,
@@ -514,7 +511,7 @@ def _sample_per_prompt(
     if config is not None:
         if config.topk_logprobs > 0:
             warn("For SASA sampling, 'topk_logprobs' is expected to be 0.")
-        sasa_logits = forward_output.logits.sasa[0, ...]  # type: ignore
+        sasa_logits = logits_output.logits.sasa[0, ...]  # type: ignore
         sasa_value = sample_sasa_logits(sasa_logits, protein.sasa[0, ...])  # type: ignore
         tokens_dir["sasa"] = sasa_value
 
@@ -534,14 +531,14 @@ def _sample_per_prompt(
         sampling_metadata = _sample_function_track(
             tokenizers.function,
             tokens=getattr(protein, "function"),
-            logits=getattr(forward_output.logits, "function"),
+            logits=getattr(logits_output.logits, "function"),
             sampling_track_config=config,
         )
         tokens_dir["function"] = sampling_metadata.pop("sampled_tokens")  # (L, D)
         track_sampling_metadata_dir["function"] = sampling_metadata
 
         sampled_tokens, _ = sample_residue_annotation_logits(
-            logits=forward_output.residue_annotation_logits  # type: ignore
+            logits=logits_output.residue_annotation_logits  # type: ignore
         )
         tokens_dir["residue_annotations"] = sampled_tokens  # (L, MAX_R)
 
@@ -571,13 +568,13 @@ def _sample_per_prompt(
             forward_and_sample_output_dir[property] = None
 
     per_res_embed = (
-        forward_output.embeddings  # type: ignore
+        logits_output.embeddings  # type: ignore
         if sampling_config.return_per_residue_embeddings
         else None
     )
     mean_embedding = (
         # [B, L, D] -> [B, D]
-        forward_output.embeddings.mean(dim=1)  # type: ignore
+        logits_output.embeddings.mean(dim=1)  # type: ignore
         if sampling_config.return_mean_embedding
         else None
     )

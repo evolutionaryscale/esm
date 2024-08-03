@@ -12,11 +12,14 @@ from esm.sdk.api import (
     ForwardAndSampleOutput,
     ForwardTrackData,
     GenerationConfig,
+    LogitsConfig,
+    LogitsOutput,
     ProteinType,
     SamplingConfig,
     SamplingTrackConfig,
 )
 from esm.utils.misc import maybe_list, maybe_tensor
+from esm.utils.sampling import validate_sampling_config
 from esm.utils.types import FunctionAnnotation
 
 
@@ -101,6 +104,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         if input.function_annotations is not None:
             req["function"] = [x.to_tuple() for x in input.function_annotations]
         req["coordinates"] = maybe_list(input.coordinates, convert_nan_to_none=True)
+        req["interface"] = input.interface_annotations
 
         request = {
             "model": self.model,
@@ -186,16 +190,14 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput:
+        validate_sampling_config(sampling_configuration, on_invalid="raise")
+
         req = {}
         sampling_config = {}
-        embedding_config = None  # TODO(zeming)
-        if (
-            sampling_configuration.return_mean_embedding
-            or sampling_configuration.return_per_residue_embeddings
-        ):
-            print(
-                "Warning: return_mean_embedding and return_per_residue_embeddings are not supported by Forge."
-            )
+        embedding_config = {
+            "sequence": sampling_configuration.return_mean_embedding,
+            "per_residue": sampling_configuration.return_per_residue_embeddings,
+        }
 
         req["sequence"] = maybe_list(input.sequence)
         req["structure"] = maybe_list(input.structure)
@@ -273,6 +275,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             entropy=get_track("entropy"),
             topk_logprob=get_track("topk_logprobs"),
             topk_tokens=get_track("topk_tokens"),
+            per_residue_embedding=data["embeddings"]["per_residue"],
+            mean_embedding=data["embeddings"]["sequence"],
         )
         return output
 
@@ -334,6 +338,57 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             plddt=maybe_tensor(data["outputs"]["plddt"]),
             ptm=maybe_tensor(data["outputs"]["ptm"]),
         )
+
+    def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        # Note: using raw model forwards is discouraged because of the byte size
+        # of the logits.
+        # Please use forward_and_sample instead.
+        req = {}
+        req["sequence"] = maybe_list(input.sequence)
+        req["structure"] = maybe_list(input.structure)
+        req["secondary_structure"] = maybe_list(input.secondary_structure)
+        req["sasa"] = maybe_list(input.sasa)
+        req["function"] = maybe_list(input.function)
+        req["coordinates"] = maybe_list(input.coordinates, convert_nan_to_none=True)
+        req["residue_annotation"] = maybe_list(input.residue_annotations)
+
+        logits_config = {
+            "sequence": config.sequence,
+            "structure": config.structure,
+            "secondary_structure": config.secondary_structure,
+            "sasa": config.sasa,
+            "function": config.function,
+            "residue_annotations": config.residue_annotations,
+            "return_embeddings": config.return_embeddings,
+        }
+
+        request = {
+            "model": self.model,
+            "inputs": req,
+            "logits_config": logits_config,
+        }
+        data = self.__post("logits", request)
+
+        def _maybe_logits(track: str):
+            if "logits" in data and track in data["logits"]:
+                return maybe_tensor(data["logits"][track])
+            return None
+
+        output = LogitsOutput(
+            logits=ForwardTrackData(
+                sequence=_maybe_logits("sequence"),
+                structure=_maybe_logits("structure"),
+                secondary_structure=_maybe_logits("secondary_structure"),
+                sasa=_maybe_logits("sasa"),
+                function=_maybe_logits("function"),
+            ),
+            embeddings=maybe_tensor(data["embeddings"]),
+            residue_annotation_logits=_maybe_logits("residue_annotation"),
+        )
+
+        return output
 
     def __post(self, endpoint, request):
         response = requests.post(

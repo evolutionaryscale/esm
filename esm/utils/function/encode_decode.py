@@ -5,7 +5,7 @@ import torch
 
 from esm.models.function_decoder import (
     FunctionTokenDecoder,
-    _merge_annotations,
+    merge_annotations,
 )
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer,
@@ -175,7 +175,7 @@ def decode_residue_annotation_tokens(
                 annotation = FunctionAnnotation(label=label, start=loc, end=loc)
                 annotations.append(annotation)
 
-    annotations = _merge_annotations(
+    annotations = merge_annotations(
         annotations,
         merge_gap_max=annotation_gap_merge_max,
     )

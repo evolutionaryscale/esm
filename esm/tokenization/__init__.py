@@ -5,6 +5,7 @@ from esm.utils.constants.esm3 import VQVAE_SPECIAL_TOKENS
 from esm.utils.constants.models import ESM3_OPEN_SMALL
 
 from .function_tokenizer import InterProQuantizedTokenizer
+from .interface_tokenizer import InterfaceAnnotationsTokenizer
 from .residue_tokenizer import ResidueAnnotationsTokenizer
 from .sasa_tokenizer import SASADiscretizingTokenizer
 from .sequence_tokenizer import EsmSequenceTokenizer
@@ -20,6 +21,7 @@ class TokenizerCollectionProtocol(Protocol):
     sasa: SASADiscretizingTokenizer
     function: InterProQuantizedTokenizer
     residue_annotations: ResidueAnnotationsTokenizer
+    interface_annotations: InterfaceAnnotationsTokenizer
 
 
 @dataclass
@@ -30,6 +32,7 @@ class TokenizerCollection:
     sasa: SASADiscretizingTokenizer
     function: InterProQuantizedTokenizer
     residue_annotations: ResidueAnnotationsTokenizer
+    interface_annotations: InterfaceAnnotationsTokenizer
 
 
 def get_model_tokenizers(model: str = ESM3_OPEN_SMALL) -> TokenizerCollection:
@@ -41,6 +44,7 @@ def get_model_tokenizers(model: str = ESM3_OPEN_SMALL) -> TokenizerCollection:
             sasa=SASADiscretizingTokenizer(),
             function=InterProQuantizedTokenizer(),
             residue_annotations=ResidueAnnotationsTokenizer(),
+            interface_annotations=InterfaceAnnotationsTokenizer(),
         )
     else:
         raise ValueError(f"Unknown model: {model}")
