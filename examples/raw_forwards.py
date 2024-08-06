@@ -26,7 +26,7 @@ def inverse_folding_example():
     encoder = ESM3_structure_encoder_v0("cuda")
     model = ESM3_sm_open_v0("cuda")
 
-    chain = ProteinChain.from_pdb("esm/data/1utn.pdb")
+    chain = ProteinChain.from_rcsb("1utn", "A")
     coords, plddt, residue_index = chain.to_structure_encoder_inputs()
     coords = coords.cuda()
     plddt = plddt.cuda()
