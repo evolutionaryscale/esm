@@ -7,9 +7,7 @@ from esm.models.vqvae import StructureTokenEncoder
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer as EsmFunctionTokenizer,
 )
-from esm.tokenization.interface_tokenizer import (
-    InterfaceAnnotationsTokenizer,
-)
+
 from esm.tokenization.residue_tokenizer import (
     ResidueAnnotationsTokenizer,
 )
@@ -169,16 +167,6 @@ def tokenize_function_annotations(
     return function_tokens, residue_annotation_tokens
 
 
-def tokenize_interface_annotations(
-    interface_annotations: Sequence[str],
-    interface_annotations_tokenizer: InterfaceAnnotationsTokenizer,
-    add_special_tokens: bool = True,
-):
-    interface_annotation_tokens = interface_annotations_tokenizer.encode(
-        [value for value in interface_annotations],
-        add_special_tokens=add_special_tokens,
-    )
-    return interface_annotation_tokens
 
 
 # Tokenized Defaults
@@ -256,11 +244,3 @@ def get_default_residue_annotation_tokens(
     return residue_annotation_tokens
 
 
-def get_default_interface_annotation_tokens(
-    sequence_length: int, interface_annotation_tokenizer: InterfaceAnnotationsTokenizer
-) -> torch.Tensor:
-    return tokenize_interface_annotations(
-        [interface_annotation_tokenizer.mask_token] * sequence_length,
-        interface_annotation_tokenizer,
-        add_special_tokens=True,
-    )

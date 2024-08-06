@@ -35,11 +35,17 @@ class ESMProtein(ProteinType):
     sasa: list[int | float | None] | None = None
     function_annotations: list[FunctionAnnotation] | None = None
     coordinates: torch.Tensor | None = None
-    interface_annotations: list[str] | None = None
+
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
-    interface_ptm: torch.Tensor | None = None
+
+
+    # When calling EvolutionaryScale API, use this flag to disclose any
+    # sequences that may potentially have concerns.
+    # Such sequences may not go through standard safety filter for approved users.
+    # Reach out if interested in using this.
+    potential_sequence_of_concern: bool = False
 
     def __len__(self):
         if self.sequence is not None:
@@ -124,10 +130,19 @@ class ESMProteinTensor(ProteinType):
     function: torch.Tensor | None = None
     residue_annotations: torch.Tensor | None = None
     coordinates: torch.Tensor | None = None
-    interface_annotations: torch.Tensor | None = None
+
+    # When calling EvolutionaryScale API, use this flag to disclose any
+    # sequences that may potentially have concerns.
+    # Such sequences may not go through standard safety filter for approved users.
+    # Reach out if interested in using this.
+    potential_sequence_of_concern: bool = False
 
     def _detect_attribute(self, func, msg):
-        mapped = {k: func(k, v) for k, v in asdict(self).items() if v is not None}
+        mapped = {
+            k: func(k, v)
+            for k, v in asdict(self).items()
+            if isinstance(v, torch.Tensor)
+        }
         s = set(mapped.values())
         if len(s) <= 0:
             return None
@@ -148,7 +163,7 @@ class ESMProteinTensor(ProteinType):
     def to(self, device_or_dtype: str | torch.device | torch.dtype) -> ESMProteinTensor:
         def _to(name):
             v = getattr(self, name)
-            if v is not None:
+            if v is not None and isinstance(v, torch.Tensor):
                 setattr(self, name, v.to(device_or_dtype))
 
         for n in attr.fields(ESMProteinTensor):

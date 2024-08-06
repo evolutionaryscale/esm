@@ -104,7 +104,6 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         if input.function_annotations is not None:
             req["function"] = [x.to_tuple() for x in input.function_annotations]
         req["coordinates"] = maybe_list(input.coordinates, convert_nan_to_none=True)
-        req["interface"] = input.interface_annotations
 
         request = {
             "model": self.model,
@@ -119,7 +118,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         }
 
         try:
-            data = self.__post("generate", request)
+            data = self.__post("generate", request, input.potential_sequence_of_concern)
         except RuntimeError as e:
             return ESMProteinError(error_msg=str(e))
 
@@ -164,7 +163,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         }
 
         try:
-            data = self.__post("generate_tensor", request)
+            data = self.__post(
+                "generate_tensor", request, input.potential_sequence_of_concern
+            )
         except RuntimeError as e:
             return ESMProteinError(error_msg=str(e))
 
@@ -232,7 +233,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "sampling_config": sampling_config,
             "embedding_config": embedding_config,
         }
-        data = self.__post("forward_and_sample", request)
+        data = self.__post(
+            "forward_and_sample", request, input.potential_sequence_of_concern
+        )
 
         def get(k, field):
             if data[k] is None:
@@ -291,7 +294,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         request = {"inputs": tracks, "model": self.model}
 
-        data = self.__post("encode", request)
+        data = self.__post("encode", request, input.potential_sequence_of_concern)
 
         return ESMProteinTensor(
             sequence=maybe_tensor(data["outputs"]["sequence"]),
@@ -323,7 +326,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "inputs": tokens,
         }
 
-        data = self.__post("decode", request)
+        data = self.__post("decode", request, input.potential_sequence_of_concern)
 
         return ESMProtein(
             sequence=data["outputs"]["sequence"],
@@ -369,7 +372,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "inputs": req,
             "logits_config": logits_config,
         }
-        data = self.__post("logits", request)
+        data = self.__post("logits", request, input.potential_sequence_of_concern)
 
         def _maybe_logits(track: str):
             if "logits" in data and track in data["logits"]:
@@ -390,7 +393,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         return output
 
-    def __post(self, endpoint, request):
+    def __post(self, endpoint, request, potential_sequence_of_concern):
+        request["potential_sequence_of_concern"] = potential_sequence_of_concern
+
         response = requests.post(
             f"{self.url}/api/v1/{endpoint}",
             json=request,

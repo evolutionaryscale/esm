@@ -108,7 +108,14 @@ def iterative_sampling_raw(
     raw_proteins: list[ESMProtein | ESMProteinError] = []
     for output_tokens in output_tokens_list:
         if isinstance(output_tokens, ESMProteinTensor):
-            raw_proteins.append(client.decode(output_tokens))
+            try:
+                raw_proteins.append(client.decode(output_tokens))
+            except Exception:
+                # Print the input tokens so we know what is wrong.
+                print("Encountered exception during decoding:")
+                print(output_tokens)
+                # Re-raise.
+                raise
         elif isinstance(output_tokens, ESMProteinError):
             raw_proteins.append(output_tokens)
         else:
@@ -195,6 +202,9 @@ def _stack_protein_tensors(
         )
 
     for f in attr.fields(ESMProteinTensor):
+        # We do not batch potential_sequence_of_concern field.
+        if f.name == "potential_sequence_of_concern":
+            continue
         _stack_field(f.name)
 
     return o
@@ -263,8 +273,8 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     ).int()
     num_to_sample = still_masked - num_tokens_masked_after_this_step
 
-    track_entropy: torch.Tensor = getattr(
-        entropy, track_to_sample
+    track_entropy: torch.Tensor = getattr(entropy, track_to_sample).to(
+        device
     )  # (B, L) or (B, L, D)
 
     if track_to_sample == "function":

@@ -31,7 +31,6 @@ _DIMS: dict[str, int] = {
     "function": 2,
     "residue_annotations": 2,
     "coordinates": 3,
-    "interface_annotations": 1,
 }
 
 
