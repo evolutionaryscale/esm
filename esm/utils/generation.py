@@ -333,7 +333,7 @@ def iterative_sampling_tokens(
             getattr(protein, track),
             getattr(tokenizers, track).mask_token_id,
         )
-        total_to_sample.append(torch.sum(masked))
+        total_to_sample.append(torch.sum(masked).item())
 
     # Different prompts may ask for different number of decoding steps.
     # For now, we simply run the max number of steps.
