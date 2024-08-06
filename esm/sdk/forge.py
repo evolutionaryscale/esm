@@ -116,7 +116,6 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "top_p": config.top_p,
             "condition_on_coordinates_only": config.condition_on_coordinates_only,
         }
-
         try:
             data = self.__post("generate", request, input.potential_sequence_of_concern)
         except RuntimeError as e:
@@ -190,7 +189,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
-    ) -> ForwardAndSampleOutput:
+    ) -> ForwardAndSampleOutput | ESMProteinError:
         validate_sampling_config(sampling_configuration, on_invalid="raise")
 
         req = {}
@@ -233,9 +232,12 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "sampling_config": sampling_config,
             "embedding_config": embedding_config,
         }
-        data = self.__post(
-            "forward_and_sample", request, input.potential_sequence_of_concern
-        )
+        try:
+            data = self.__post(
+                "forward_and_sample", request, input.potential_sequence_of_concern
+            )
+        except RuntimeError as e:
+            return ESMProteinError(error_msg=str(e))
 
         def get(k, field):
             if data[k] is None:
@@ -283,7 +285,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         )
         return output
 
-    def encode(self, input: ESMProtein) -> ESMProteinTensor:
+    def encode(self, input: ESMProtein) -> ESMProteinTensor | ESMProteinError:
         tracks = {}
         tracks["sequence"] = input.sequence
         tracks["secondary_structure"] = input.secondary_structure
@@ -294,7 +296,10 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         request = {"inputs": tracks, "model": self.model}
 
-        data = self.__post("encode", request, input.potential_sequence_of_concern)
+        try:
+            data = self.__post("encode", request, input.potential_sequence_of_concern)
+        except RuntimeError as e:
+            return ESMProteinError(error_msg=str(e))
 
         return ESMProteinTensor(
             sequence=maybe_tensor(data["outputs"]["sequence"]),
@@ -311,7 +316,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
     def decode(
         self,
         input: ESMProteinTensor,
-    ) -> ESMProtein:
+    ) -> ESMProtein | ESMProteinError:
         tokens = {}
         tokens["sequence"] = maybe_list(input.sequence)
         tokens["structure"] = maybe_list(input.structure)
@@ -326,7 +331,10 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "inputs": tokens,
         }
 
-        data = self.__post("decode", request, input.potential_sequence_of_concern)
+        try:
+            data = self.__post("decode", request, input.potential_sequence_of_concern)
+        except RuntimeError as e:
+            return ESMProteinError(error_msg=str(e))
 
         return ESMProtein(
             sequence=data["outputs"]["sequence"],
