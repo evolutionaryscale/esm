@@ -16,7 +16,7 @@ from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer,
 )
 from esm.utils.constants import esm3 as C
-from esm.utils.misc import merge_ranges
+from esm.utils.misc import merge_annotations, merge_ranges
 from esm.utils.types import FunctionAnnotation
 
 
@@ -252,7 +252,7 @@ class FunctionTokenDecoder(nn.Module):
                 )
                 annotations.append(annotation)
 
-            annotations = _merge_annotations(
+            annotations = merge_annotations(
                 annotations,
                 merge_gap_max=annotation_gap_merge_max,
             )
@@ -308,34 +308,3 @@ class FunctionTokenDecoder(nn.Module):
                 annotations.append(annotation)
 
         return annotations
-
-
-def _merge_annotations(
-    annotations: list[FunctionAnnotation],
-    merge_gap_max: int | None = None,
-) -> list[FunctionAnnotation]:
-    """Merges annotations into non-overlapping segments.
-
-    Args:
-        annotations: annotations to merge.
-        merge_gap_max: optionally merge neighboring ranges that are separated by a gap
-          no larger than this size.
-    Returns:
-        non-overlapping annotations with gaps merged.
-    """
-    grouped: dict[str, list[range]] = defaultdict(list)
-    for a in annotations:
-        # Convert one-indexed inclusive-inclusive, to range()
-        grouped[a.label].append(range(a.start, a.end + 1))
-
-    merged = []
-    for label, ranges in grouped.items():
-        merged_ranges = merge_ranges(ranges, merge_gap_max=merge_gap_max)
-        for range_ in merged_ranges:
-            annotation = FunctionAnnotation(
-                label=label,
-                start=range_.start,  # one-index inclusive  (BOS shifts indexes +1)
-                end=range_.stop - 1,  # one-index exclusive -> one-index inclusive
-            )
-            merged.append(annotation)
-    return merged

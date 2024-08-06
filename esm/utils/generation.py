@@ -12,11 +12,10 @@ from esm.sdk.api import (
     ESMProteinError,
     ESMProteinTensor,
     ForwardAndSampleOutput,
-    ForwardConfig,
-    ForwardOutput,
     ForwardTrackData,
     GenerationConfig,
-    ReturnLogitsConfig,
+    LogitsConfig,
+    LogitsOutput,
     SamplingConfig,
     SamplingTrackConfig,
 )
@@ -109,7 +108,14 @@ def iterative_sampling_raw(
     raw_proteins: list[ESMProtein | ESMProteinError] = []
     for output_tokens in output_tokens_list:
         if isinstance(output_tokens, ESMProteinTensor):
-            raw_proteins.append(client.decode(output_tokens))
+            try:
+                raw_proteins.append(client.decode(output_tokens))
+            except Exception:
+                # Print the input tokens so we know what is wrong.
+                print("Encountered exception during decoding:")
+                print(output_tokens)
+                # Re-raise.
+                raise
         elif isinstance(output_tokens, ESMProteinError):
             raw_proteins.append(output_tokens)
         else:
@@ -196,6 +202,9 @@ def _stack_protein_tensors(
         )
 
     for f in attr.fields(ESMProteinTensor):
+        # We do not batch potential_sequence_of_concern field.
+        if f.name == "potential_sequence_of_concern":
+            continue
         _stack_field(f.name)
 
     return o
@@ -264,8 +273,8 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     ).int()
     num_to_sample = still_masked - num_tokens_masked_after_this_step
 
-    track_entropy: torch.Tensor = getattr(
-        entropy, track_to_sample
+    track_entropy: torch.Tensor = getattr(entropy, track_to_sample).to(
+        device
     )  # (B, L) or (B, L, D)
 
     if track_to_sample == "function":
@@ -324,7 +333,7 @@ def iterative_sampling_tokens(
             getattr(protein, track),
             getattr(tokenizers, track).mask_token_id,
         )
-        total_to_sample.append(torch.sum(masked))
+        total_to_sample.append(torch.sum(masked).item())
 
     # Different prompts may ask for different number of decoding steps.
     # For now, we simply run the max number of steps.
@@ -370,7 +379,7 @@ def iterative_sampling_tokens(
             per_prompt_cur_sampled = _BatchedESMProteinTensor.from_protein_tensor(
                 batched_tokens.slice(i)
             )
-            per_prompt_forward_out: ForwardOutput = _slice_tensor_dataclass(
+            per_prompt_forward_out: LogitsOutput = _slice_tensor_dataclass(
                 forward_out, i, keep_dim=True
             )
             # Trim logits to proper sequence length for this prompt.
@@ -465,17 +474,15 @@ def _batch_forward(
     protein: _BatchedESMProteinTensor,
 ):
     # Forward pass
-    return client._forward(
+    return client.logits(
         protein,
-        ForwardConfig(
-            ReturnLogitsConfig(
-                sequence=True,
-                structure=True,
-                secondary_structure=True,
-                sasa=True,
-                function=True,
-                residue_annotations=True,
-            ),
+        LogitsConfig(
+            sequence=True,
+            structure=True,
+            secondary_structure=True,
+            sasa=True,
+            function=True,
+            residue_annotations=True,
             return_embeddings=True,
         ),
     )
@@ -483,7 +490,7 @@ def _batch_forward(
 
 def _sample_per_prompt(
     protein: _BatchedESMProteinTensor,
-    forward_output: ForwardOutput,
+    logits_output: LogitsOutput,
     sampling_config: SamplingConfig,
     tokenizers: TokenizerCollectionProtocol,
 ) -> ForwardAndSampleOutput:
@@ -499,7 +506,7 @@ def _sample_per_prompt(
             tokens_dir[track] = maybe_clone(getattr(protein, track))
             continue
         sampling_metadata = _sample_track(
-            logits=getattr(forward_output.logits, track),
+            logits=getattr(logits_output.logits, track),
             tokens=getattr(protein, track),
             sampling_track_config=config,
             mask_idx=getattr(tokenizers, track).mask_token_id,
@@ -514,7 +521,7 @@ def _sample_per_prompt(
     if config is not None:
         if config.topk_logprobs > 0:
             warn("For SASA sampling, 'topk_logprobs' is expected to be 0.")
-        sasa_logits = forward_output.logits.sasa[0, ...]  # type: ignore
+        sasa_logits = logits_output.logits.sasa[0, ...]  # type: ignore
         sasa_value = sample_sasa_logits(sasa_logits, protein.sasa[0, ...])  # type: ignore
         tokens_dir["sasa"] = sasa_value
 
@@ -534,14 +541,14 @@ def _sample_per_prompt(
         sampling_metadata = _sample_function_track(
             tokenizers.function,
             tokens=getattr(protein, "function"),
-            logits=getattr(forward_output.logits, "function"),
+            logits=getattr(logits_output.logits, "function"),
             sampling_track_config=config,
         )
         tokens_dir["function"] = sampling_metadata.pop("sampled_tokens")  # (L, D)
         track_sampling_metadata_dir["function"] = sampling_metadata
 
         sampled_tokens, _ = sample_residue_annotation_logits(
-            logits=forward_output.residue_annotation_logits  # type: ignore
+            logits=logits_output.residue_annotation_logits  # type: ignore
         )
         tokens_dir["residue_annotations"] = sampled_tokens  # (L, MAX_R)
 
@@ -571,13 +578,13 @@ def _sample_per_prompt(
             forward_and_sample_output_dir[property] = None
 
     per_res_embed = (
-        forward_output.embeddings  # type: ignore
+        logits_output.embeddings  # type: ignore
         if sampling_config.return_per_residue_embeddings
         else None
     )
     mean_embedding = (
         # [B, L, D] -> [B, D]
-        forward_output.embeddings.mean(dim=1)  # type: ignore
+        logits_output.embeddings.mean(dim=1)  # type: ignore
         if sampling_config.return_mean_embedding
         else None
     )

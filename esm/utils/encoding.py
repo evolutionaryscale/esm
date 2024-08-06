@@ -7,6 +7,7 @@ from esm.models.vqvae import StructureTokenEncoder
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer as EsmFunctionTokenizer,
 )
+
 from esm.tokenization.residue_tokenizer import (
     ResidueAnnotationsTokenizer,
 )
@@ -166,6 +167,8 @@ def tokenize_function_annotations(
     return function_tokens, residue_annotation_tokens
 
 
+
+
 # Tokenized Defaults
 def get_default_sequence_tokens(
     sequence_length: int,
@@ -239,3 +242,5 @@ def get_default_residue_annotation_tokens(
     residue_annotation_tokens[0] = residue_annotation_tokenizer.bos_token_id
     residue_annotation_tokens[-1] = residue_annotation_tokenizer.eos_token_id
     return residue_annotation_tokens
+
+

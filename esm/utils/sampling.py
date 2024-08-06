@@ -1,3 +1,6 @@
+import warnings
+from typing import Literal
+
 import attr
 import torch
 import torch.nn.functional as F
@@ -124,6 +127,27 @@ def get_default_sampling_config(
             ),
         )
     return sampling_config
+
+
+def validate_sampling_config(
+    sampling_config: SamplingConfig,
+    on_invalid: Literal["raise", "warn"] = "warn",
+):
+    # Check that all tracks have topk_logprobs less or equal to MAX_TOP_K
+    for track in attr.fields(SamplingConfig):
+        track: attr.Attribute
+        track_config = getattr(sampling_config, track.name, None)
+        if isinstance(track_config, SamplingTrackConfig):
+            max_topk = track.metadata["max_topk"]
+            if track_config.topk_logprobs > max_topk:
+                msg = (
+                    f"Sampling track {track.name} has topk_logprobs={track_config.topk_logprobs} "
+                    f"greater than MAX_TOPK={max_topk}."
+                )
+                if on_invalid == "raise":
+                    raise AssertionError(msg)
+                else:
+                    warnings.warn(msg)
 
 
 def sample_logits(

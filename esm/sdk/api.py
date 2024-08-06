@@ -7,6 +7,7 @@ import attr
 import torch
 from attr import asdict, define
 
+import esm.utils.constants.api as C
 from esm.tokenization import (
     TokenizerCollectionProtocol,
     get_model_tokenizers,
@@ -34,9 +35,17 @@ class ESMProtein(ProteinType):
     sasa: list[int | float | None] | None = None
     function_annotations: list[FunctionAnnotation] | None = None
     coordinates: torch.Tensor | None = None
+
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
+
+
+    # When calling EvolutionaryScale API, use this flag to disclose any
+    # sequences that may potentially have concerns.
+    # Such sequences may not go through standard safety filter for approved users.
+    # Reach out if interested in using this.
+    potential_sequence_of_concern: bool = False
 
     def __len__(self):
         if self.sequence is not None:
@@ -122,8 +131,18 @@ class ESMProteinTensor(ProteinType):
     residue_annotations: torch.Tensor | None = None
     coordinates: torch.Tensor | None = None
 
+    # When calling EvolutionaryScale API, use this flag to disclose any
+    # sequences that may potentially have concerns.
+    # Such sequences may not go through standard safety filter for approved users.
+    # Reach out if interested in using this.
+    potential_sequence_of_concern: bool = False
+
     def _detect_attribute(self, func, msg):
-        mapped = {k: func(k, v) for k, v in asdict(self).items() if v is not None}
+        mapped = {
+            k: func(k, v)
+            for k, v in asdict(self).items()
+            if isinstance(v, torch.Tensor)
+        }
         s = set(mapped.values())
         if len(s) <= 0:
             return None
@@ -144,7 +163,7 @@ class ESMProteinTensor(ProteinType):
     def to(self, device_or_dtype: str | torch.device | torch.dtype) -> ESMProteinTensor:
         def _to(name):
             v = getattr(self, name)
-            if v is not None:
+            if v is not None and isinstance(v, torch.Tensor):
                 setattr(self, name, v.to(device_or_dtype))
 
         for n in attr.fields(ESMProteinTensor):
@@ -213,30 +232,24 @@ class SamplingTrackConfig:
 
 @define
 class SamplingConfig:
-    sequence: SamplingTrackConfig | None = None
-    structure: SamplingTrackConfig | None = None
-    secondary_structure: SamplingTrackConfig | None = None
-    sasa: SamplingTrackConfig | None = None
-    function: SamplingTrackConfig | None = None
+    sequence: SamplingTrackConfig | None = attr.field(
+        default=None, metadata={"max_topk": C.MAX_TOPK_SEQUENCE}
+    )
+    structure: SamplingTrackConfig | None = attr.field(
+        default=None, metadata={"max_topk": C.MAX_TOPK_STRUCTURE}
+    )
+    secondary_structure: SamplingTrackConfig | None = attr.field(
+        default=None, metadata={"max_topk": C.MAX_TOPK_SECONDARY_STRUCTURE}
+    )
+    sasa: SamplingTrackConfig | None = attr.field(
+        default=None, metadata={"max_topk": C.MAX_TOPK_SASA}
+    )
+    function: SamplingTrackConfig | None = attr.field(
+        default=None, metadata={"max_topk": C.MAX_TOPK_FUNCTION}
+    )
 
     return_per_residue_embeddings: bool = False
     return_mean_embedding: bool = False
-
-
-@define
-class ReturnLogitsConfig:
-    sequence: bool = False
-    structure: bool = False
-    secondary_structure: bool = False
-    sasa: bool = False
-    function: bool = False
-    residue_annotations: bool = False
-
-
-@define
-class ForwardConfig:
-    return_logits: ReturnLogitsConfig = ReturnLogitsConfig()
-    return_embeddings: bool = False
 
 
 @define
@@ -249,7 +262,21 @@ class ForwardTrackData:
 
 
 @define
-class ForwardOutput:
+class LogitsConfig:
+    # Logits.
+    sequence: bool = False
+    structure: bool = False
+    secondary_structure: bool = False
+    sasa: bool = False
+    function: bool = False
+    residue_annotations: bool = False
+
+    # Embeddings.
+    return_embeddings: bool = False
+
+
+@define
+class LogitsOutput:
     logits: ForwardTrackData | None = None
     embeddings: torch.Tensor | None = None
 
@@ -260,7 +287,7 @@ class ForwardOutput:
 
 
 @define
-class ForwardAndSampleOutput(ForwardOutput):
+class ForwardAndSampleOutput(LogitsOutput):
     protein_tensor: ESMProteinTensor = ESMProteinTensor()
 
     entropy: ForwardTrackData | None = None
@@ -302,9 +329,9 @@ class ESM3InferenceClient(ABC):
         # Decode is the inverse of encode, and runs a structure_token_decoder to output coordinates
         raise NotImplementedError
 
-    def _forward(
-        self, input: ESMProteinTensor, config: ForwardConfig = ForwardConfig()
-    ) -> ForwardOutput:
+    def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
         # Our API generally discourages using raw forwards.
         # This is because sending logits can be prohibitively expensive.
         # Please use forward_and_sample instead.

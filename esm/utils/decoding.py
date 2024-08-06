@@ -53,7 +53,7 @@ def decode_protein_tensor(
     # If all pad tokens, set to None
     for track in attr.fields(ESMProteinTensor):
         tokens: torch.Tensor | None = getattr(input, track.name)
-        if track.name == "coordinates":
+        if track.name == "coordinates" or track.name == "potential_sequence_of_concern":
             continue
         if tokens is not None:
             tokens = tokens[1:-1]  # Remove BOS and EOS tokens
@@ -109,6 +109,7 @@ def decode_protein_tensor(
         coordinates=coordinates,
         plddt=plddt,
         ptm=ptm,
+        potential_sequence_of_concern=input.potential_sequence_of_concern,
     )
 
 
