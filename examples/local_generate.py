@@ -5,6 +5,8 @@ from esm.sdk.api import (
     ESMProteinError,
     ESMProteinTensor,
     GenerationConfig,
+    LogitsConfig,
+    LogitsOutput,
     SamplingConfig,
     SamplingTrackConfig,
 )
@@ -86,6 +88,20 @@ def main(client: ESM3InferenceClient):
     assert isinstance(
         protein_with_function, ESMProtein
     ), f"{protein_with_function} is not an ESMProtein"
+
+    # Logits
+    protein = get_sample_protein()
+    protein.coordinates = None
+    protein.function_annotations = None
+    protein.sasa = None
+    protein_tensor = client.encode(protein)
+    logits_output = client.logits(protein_tensor, LogitsConfig(sequence=True))
+    assert isinstance(
+        logits_output, LogitsOutput
+    ), f"LogitsOutput was expected but got {logits_output}"
+    assert (
+        logits_output.logits is not None and logits_output.logits.sequence is not None
+    )
 
     # Chain of Thought (Function -> Secondary Structure -> Structure -> Sequence)
     cot_protein = get_sample_protein()

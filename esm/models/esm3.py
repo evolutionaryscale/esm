@@ -514,9 +514,16 @@ class ESM3(nn.Module, ESM3InferenceClient):
         )
 
     def logits(
-        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+        self,
+        input: ESMProteinTensor | _BatchedESMProteinTensor,
+        config: LogitsConfig = LogitsConfig(),
     ) -> LogitsOutput:
+        if not isinstance(input, _BatchedESMProteinTensor):
+            # Create batch dimension if necessary.
+            input = _BatchedESMProteinTensor.from_protein_tensor(input)
+
         device = torch.device(input.device)
+
         # Default plddt conditioning for inference. 1s where coordinates are provided.
         if input.coordinates is None:
             per_res_plddt = None
