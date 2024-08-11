@@ -2,6 +2,8 @@ import os
 
 from esm.sdk.forge import ESM3ForgeInferenceClient
 
+# Note: please do not import ESM3SageMakerClient here since that requires AWS SDK.
+
 
 def client(
     model="esm3-sm-open-v1",

@@ -1,5 +1,6 @@
 import asyncio
 from typing import Sequence
+from urllib.parse import urljoin
 
 import requests
 import torch
@@ -405,7 +406,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
 
         response = requests.post(
-            f"{self.url}/api/v1/{endpoint}",
+            urljoin(self.url, f"/api/v1/{endpoint}"),
             json=request,
             headers=self.headers,
             timeout=self.request_timeout,

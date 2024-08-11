@@ -31,6 +31,7 @@ from esm.utils.misc import stack_variable_length_tensors
 from esm.utils.noise_schedules import NOISE_SCHEDULE_REGISTRY
 from esm.utils.sampling import (
     _BatchedESMProteinTensor,
+    get_sampling_mask,
     sample_function_logits,
     sample_logits,
     sample_residue_annotation_logits,
@@ -108,14 +109,7 @@ def iterative_sampling_raw(
     raw_proteins: list[ESMProtein | ESMProteinError] = []
     for output_tokens in output_tokens_list:
         if isinstance(output_tokens, ESMProteinTensor):
-            try:
-                raw_proteins.append(client.decode(output_tokens))
-            except Exception:
-                # Print the input tokens so we know what is wrong.
-                print("Encountered exception during decoding:")
-                print(output_tokens)
-                # Re-raise.
-                raise
+            raw_proteins.append(client.decode(output_tokens))
         elif isinstance(output_tokens, ESMProteinError):
             raw_proteins.append(output_tokens)
         else:
@@ -214,9 +208,15 @@ def _get_masked_positions(
     track: str, tokens: torch.Tensor, mask_token_id: int
 ) -> torch.Tensor:
     if track == "function":
-        return torch.all(tokens == mask_token_id, dim=-1).to(tokens.device)
+        mask = torch.all(tokens == mask_token_id, dim=-1).to(tokens.device)
     else:
-        return tokens == mask_token_id
+        mask = tokens == mask_token_id
+
+    # Should not sample BOS and EOS positions.
+    mask[..., 0] = False
+    mask[..., -1] = False
+
+    return mask
 
 
 def _get_iterative_sampling_mask_for_prompt_and_step(
@@ -407,6 +407,7 @@ def iterative_sampling_tokens(
                 per_prompt_forward_out,
                 sampling_config,
                 tokenizers,
+                decode_sasa_tokens=False,
             )
 
             # All positions sampled after _sample_per_prompt() above.
@@ -493,14 +494,21 @@ def _sample_per_prompt(
     logits_output: LogitsOutput,
     sampling_config: SamplingConfig,
     tokenizers: TokenizerCollectionProtocol,
+    decode_sasa_tokens: bool = True,
 ) -> ForwardAndSampleOutput:
+    assert logits_output.logits is not None
+
     def maybe_clone(x: torch.Tensor | None) -> torch.Tensor | None:
         return x.clone() if x is not None else None
 
     # Sampling
     tokens_dir = {}
     track_sampling_metadata_dir: dict[str, dict | None] = {}
-    for track in ["sequence", "structure", "secondary_structure"]:
+    integer_sampling_tracks = ["sequence", "structure", "secondary_structure"]
+    if not decode_sasa_tokens:
+        integer_sampling_tracks.append("sasa")
+
+    for track in integer_sampling_tracks:
         config = getattr(sampling_config, track)
         if config is None:
             tokens_dir[track] = maybe_clone(getattr(protein, track))
@@ -514,21 +522,33 @@ def _sample_per_prompt(
         tokens_dir[track] = sampling_metadata.pop("sampled_tokens")  # (L,)
         track_sampling_metadata_dir[track] = sampling_metadata
 
-    # Sample SASA seperately
-    config = getattr(sampling_config, "sasa")
-    track_sampling_metadata_dir["sasa"] = None
+    # Sample SASA seperately (if needed)
+    if decode_sasa_tokens:
+        config = getattr(sampling_config, "sasa")
+        track_sampling_metadata_dir["sasa"] = None
 
-    if config is not None:
-        if config.topk_logprobs > 0:
-            warn("For SASA sampling, 'topk_logprobs' is expected to be 0.")
-        sasa_logits = logits_output.logits.sasa[0, ...]  # type: ignore
-        sasa_value = sample_sasa_logits(sasa_logits, protein.sasa[0, ...])  # type: ignore
-        tokens_dir["sasa"] = sasa_value
+        if config is None:
+            tokens_dir["sasa"] = maybe_clone(getattr(protein, "sasa"))
+        else:
+            if config.topk_logprobs > 0:
+                warn("For SASA sampling, 'topk_logprobs' is expected to be 0.")
 
-        probs = sasa_logits.softmax(dim=-1)
-        entropy = -(probs * sasa_logits.log_softmax(-1)).sum(-1)
+            assert logits_output.logits.sasa is not None
+            assert protein.sasa is not None
 
-        track_sampling_metadata_dir["sasa"] = {"entropy": entropy}
+            sasa_logits = logits_output.logits.sasa
+            sasa_value = sample_sasa_logits(
+                sasa_logits,
+                protein.sasa,
+                sampling_track_config=config,
+                mask_idx=tokenizers.sasa.mask_token_id,
+            )
+            tokens_dir["sasa"] = sasa_value
+
+            probs = sasa_logits.softmax(dim=-1)
+            entropy = -(probs * sasa_logits.log_softmax(-1)).sum(-1)
+
+            track_sampling_metadata_dir["sasa"] = {"entropy": entropy}
 
     # Sample function and residue annotations separately
     config = getattr(sampling_config, "function")
@@ -612,25 +632,7 @@ def _sample_track(
         logits, temperature=temperature, top_p=sampling_track_config.top_p
     )
     log_probs = logits.log_softmax(-1)
-
-    # Do not sample at BOS and EOS tokens
-    sampling_mask = torch.ones_like(tokens, dtype=torch.bool)  # (B, L, )
-    sampling_mask[:, 0] = False
-    sampling_mask[:, -1] = False
-
-    # Do not sample at special token positions but allow sampling at mask token
-    special_minus_mask = list(set(sampling_track_config.invalid_ids) - {mask_idx})
-    if len(special_minus_mask) > 0:
-        special_tokens = torch.tensor(special_minus_mask, device=tokens.device)
-        assert special_tokens.numel() > 0
-        sampling_mask = sampling_mask & (
-            tokens[..., None] != special_tokens[None, :]
-        ).all(-1)
-
-    # Keep only samples from masked positions (if specified)
-    if sampling_track_config.only_sample_masked_tokens:
-        masked_tokens = tokens == mask_idx
-        sampling_mask = sampling_mask & masked_tokens
+    sampling_mask = get_sampling_mask(tokens, sampling_track_config, mask_idx)
     sampled_tokens = torch.where(sampling_mask, sampled_tokens, tokens)
 
     return _compute_track_metadata(
