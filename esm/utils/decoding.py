@@ -31,6 +31,7 @@ from esm.utils.function.encode_decode import (
     decode_function_tokens,
     decode_residue_annotation_tokens,
 )
+from esm.utils.misc import list_nan_to_none
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import FunctionAnnotation
 
@@ -212,7 +213,8 @@ def decode_sasa(
     else:
         # If already float, just convert to list
         sasa = sasa_tokens.tolist()
-    return sasa
+
+    return list_nan_to_none(sasa)
 
 
 def decode_function_annotations(
