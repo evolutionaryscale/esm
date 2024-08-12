@@ -248,6 +248,8 @@ def sample_residue_annotation_logits(
 def sample_sasa_logits(
     logits: torch.Tensor,
     tokens: torch.Tensor,
+    sampling_track_config: SamplingTrackConfig,
+    mask_idx: int,
 ) -> torch.Tensor:
     sasa_probs = torch.nn.functional.softmax(logits, dim=-1)
     max_prob_idx = torch.argmax(sasa_probs, dim=-1)
@@ -255,12 +257,11 @@ def sample_sasa_logits(
     sasa_bins = (sasa_bins[:-1] + sasa_bins[1:]) / 2
     sasa_bins = sasa_bins.to(sasa_probs.device)
 
+    sampling_mask = get_sampling_mask(tokens, sampling_track_config, mask_idx)
     # Adjust sasa_values based on max_prob_idx conditions
     sasa_value = torch.sum(sasa_probs[..., 3:-1] * sasa_bins, dim=-1)
-    sasa_value[tokens == 0] = float("-inf")
-    sasa_value[tokens == 1] = float("-inf")
-    sasa_value[tokens == 2] = float("-inf")
     sasa_value[max_prob_idx == 18] = float("inf")
+    sasa_value[~sampling_mask] = float("inf")
 
     return sasa_value
 
@@ -294,3 +295,29 @@ def _tensorize_like(value: int | float | torch.Tensor, logits: torch.Tensor):
     if isinstance(value, (float, int)):
         value = torch.full_like(logits[..., 0], value, dtype=logits.dtype)
     return value.to(logits.device).expand_as(logits[..., 0]).reshape(-1)
+
+
+def get_sampling_mask(
+    tokens: torch.Tensor,
+    sampling_track_config: SamplingTrackConfig,
+    mask_idx: int,
+):
+    # Do not sample at BOS and EOS tokens
+    sampling_mask = torch.ones_like(tokens, dtype=torch.bool)  # (B, L, )
+    sampling_mask[:, 0] = False
+    sampling_mask[:, -1] = False
+
+    # Do not sample at special token positions but allow sampling at mask token
+    special_minus_mask = list(set(sampling_track_config.invalid_ids) - {mask_idx})
+    if len(special_minus_mask) > 0:
+        special_tokens = torch.tensor(special_minus_mask, device=tokens.device)
+        assert special_tokens.numel() > 0
+        sampling_mask = sampling_mask & (
+            tokens[..., None] != special_tokens[None, :]
+        ).all(-1)
+
+    # Keep only samples from masked positions (if specified)
+    if sampling_track_config.only_sample_masked_tokens:
+        masked_tokens = tokens == mask_idx
+        sampling_mask = sampling_mask & masked_tokens
+    return sampling_mask

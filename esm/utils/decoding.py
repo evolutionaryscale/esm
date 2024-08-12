@@ -200,7 +200,18 @@ def decode_sasa(
     if sasa_tokens[-1] != 0:
         raise ValueError("SASA does not end with 0 corresponding to EOS token")
     sasa_tokens = sasa_tokens[1:-1]
-    sasa = sasa_tokens.tolist()
+    if sasa_tokens.dtype in [
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+        torch.long,
+    ]:
+        # Decode if int
+        sasa = sasa_tokenizer.decode_float(sasa_tokens)
+    else:
+        # If already float, just convert to list
+        sasa = sasa_tokens.tolist()
     return sasa
 
 
