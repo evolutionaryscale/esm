@@ -9,9 +9,15 @@ from esm.widgets.utils.printing import wrapped_print
 
 
 class ProteinImporter:
-    def __init__(self) -> None:
-        self._protein_list = []
-        self._protein_workspace = {}
+    def __init__(
+        self,
+        max_proteins: int | None = None,
+        autoload: bool = False,
+    ) -> None:
+        self._protein_list: list[tuple[str, ProteinChain]] = []
+        self._protein_workspace: dict[str, str] = {}
+        self.max_proteins = max_proteins
+        self.autoload = autoload
 
         # Workspace section
         self.workspace_title = widgets.HTML(
@@ -58,7 +64,7 @@ class ProteinImporter:
         self.error_output = widgets.Output()
         self.entries_box = widgets.VBox()
 
-        self.pdb_id_add_button.on_click(self.add_pdb_id)
+        self.pdb_id_add_button.on_click(self.on_click_add)
         self.pdb_uploader.observe(self.on_upload, names="value")
 
         self.delete_callbacks: list[Callable[[], None]] = []
@@ -77,11 +83,18 @@ class ProteinImporter:
     def protein_list(self):
         return self._protein_list
 
-    def add_pdb_id(self, _):
+    def on_click_add(self, _):
         pdb_id = self.pdb_id_input.value
         chain_id = self.pdb_chain_input.value or "detect"
+        self.add_pdb_id(pdb_id, chain_id)
+
+    def add_pdb_id(self, pdb_id: str, chain_id: str):
         try:
             self.error_output.clear_output()
+
+            if self.max_proteins and len(self._protein_list) >= self.max_proteins:
+                raise ValueError("Maximum number of proteins reached")
+
             if not pdb_id:
                 raise ValueError("PDB ID or Filename is required")
             if pdb_id.lower().endswith(".pdb"):
@@ -124,11 +137,19 @@ class ProteinImporter:
     def on_upload(self, _):
         try:
             self.error_output.clear_output()
+
+            if self.max_proteins and len(self._protein_list) >= self.max_proteins:
+                raise ValueError("Maximum number of proteins reached")
+
             uploaded_file = next(iter(self.pdb_uploader.value))
             filename: str = uploaded_file["name"]
             str_content = codecs.decode(uploaded_file["content"], encoding="utf-8")
             self._protein_workspace[filename] = str_content
             self.workspace.children += (widgets.Label(value=f"{filename}"),)
+
+            if self.autoload:
+                self.add_pdb_id(filename, "detect")
+
         except Exception as e:
             with self.error_output:
                 wrapped_print(f"Error: {e}")

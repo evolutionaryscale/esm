@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from esm.utils.constants.esm3 import VQVAE_SPECIAL_TOKENS
 from esm.utils.constants.models import ESM3_OPEN_SMALL
 
 from .function_tokenizer import InterProQuantizedTokenizer
@@ -36,7 +35,7 @@ def get_model_tokenizers(model: str = ESM3_OPEN_SMALL) -> TokenizerCollection:
     if model == ESM3_OPEN_SMALL:
         return TokenizerCollection(
             sequence=EsmSequenceTokenizer(),
-            structure=StructureTokenizer(vq_vae_special_tokens=VQVAE_SPECIAL_TOKENS),
+            structure=StructureTokenizer(),
             secondary_structure=SecondaryStructureTokenizer(kind="ss8"),
             sasa=SASADiscretizingTokenizer(),
             function=InterProQuantizedTokenizer(),

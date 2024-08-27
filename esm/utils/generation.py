@@ -495,6 +495,7 @@ def _sample_per_prompt(
     sampling_config: SamplingConfig,
     tokenizers: TokenizerCollectionProtocol,
     decode_sasa_tokens: bool = True,
+    mask_logits_of_invalid_ids: bool = True,
 ) -> ForwardAndSampleOutput:
     assert logits_output.logits is not None
 
@@ -513,11 +514,19 @@ def _sample_per_prompt(
         if config is None:
             tokens_dir[track] = maybe_clone(getattr(protein, track))
             continue
+        tokenizer = getattr(tokenizers, track)
+        valid_ids = (
+            set(tokenizer.all_token_ids)
+            - set(tokenizer.special_token_ids)
+            - set(config.invalid_ids)
+        )
         sampling_metadata = _sample_track(
             logits=getattr(logits_output.logits, track),
             tokens=getattr(protein, track),
             sampling_track_config=config,
             mask_idx=getattr(tokenizers, track).mask_token_id,
+            valid_ids=list(valid_ids),
+            mask_logits_of_invalid_ids=mask_logits_of_invalid_ids,
         )
         tokens_dir[track] = sampling_metadata.pop("sampled_tokens")  # (L,)
         track_sampling_metadata_dir[track] = sampling_metadata
@@ -536,12 +545,19 @@ def _sample_per_prompt(
             assert logits_output.logits.sasa is not None
             assert protein.sasa is not None
 
+            valid_ids = (
+                set(tokenizers.sasa.all_token_ids)
+                - set(tokenizer.special_token_ids)
+                - set(config.invalid_ids)
+            )
             sasa_logits = logits_output.logits.sasa
             sasa_value = sample_sasa_logits(
                 sasa_logits,
                 protein.sasa,
                 sampling_track_config=config,
                 mask_idx=tokenizers.sasa.mask_token_id,
+                valid_ids=list(valid_ids),
+                mask_logits_of_invalid_ids=mask_logits_of_invalid_ids,
             )
             tokens_dir["sasa"] = sasa_value
 
@@ -558,6 +574,9 @@ def _sample_per_prompt(
             getattr(protein, "residue_annotations")
         )
     else:
+        if config.invalid_ids is not None and len(config.invalid_ids) > 0:
+            warn("For function sampling, invalid_ids sampling config is not supported.")
+
         sampling_metadata = _sample_function_track(
             tokenizers.function,
             tokens=getattr(protein, "function"),
@@ -621,6 +640,8 @@ def _sample_track(
     tokens: torch.Tensor,
     sampling_track_config: SamplingTrackConfig,
     mask_idx: int,
+    valid_ids: list[int],
+    mask_logits_of_invalid_ids: bool = True,
 ) -> dict[str, torch.Tensor]:
     """Works with inputs that have batch dimension."""
     # Sample in all positions
@@ -629,7 +650,11 @@ def _sample_track(
     # since the logits may be computed with a longer padded batch, while tokens
     # are the original input sequence.
     sampled_tokens = sample_logits(
-        logits, temperature=temperature, top_p=sampling_track_config.top_p
+        logits,
+        temperature=temperature,
+        valid_ids=valid_ids,
+        top_p=sampling_track_config.top_p,
+        mask_logits_of_invalid_ids=mask_logits_of_invalid_ids,
     )
     log_probs = logits.log_softmax(-1)
     sampling_mask = get_sampling_mask(tokens, sampling_track_config, mask_idx)

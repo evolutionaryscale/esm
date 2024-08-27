@@ -348,6 +348,22 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
     def pad_token_id(self) -> int:
         return self.vocab_to_index[self.pad_token]
 
+    @property
+    def chain_break_token(self) -> str:
+        return "<pad>"
+
+    @property
+    def chain_break_token_id(self) -> int:
+        return self.vocab_to_index[self.chain_break_token]
+
+    @property
+    def all_token_ids(self):
+        return list(range(len(self.vocab)))
+
+    @property
+    def special_token_ids(self):
+        return [self.vocab_to_index[token] for token in self.special_tokens]
+
 
 def _texts_to_keywords(texts: list[str]) -> list[str]:
     """Breaks InterPro/GO free-text description set into bag-of-n-grams for n={1,2}.

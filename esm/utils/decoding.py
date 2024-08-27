@@ -40,7 +40,7 @@ def decode_protein_tensor(
     input: ESMProteinTensor,
     tokenizers: TokenizerCollectionProtocol,
     structure_token_decoder: StructureTokenDecoder,
-    function_token_decoder: FunctionTokenDecoder,
+    function_token_decoder: FunctionTokenDecoder | None = None,
 ) -> ESMProtein:
     input = attr.evolve(input)  # Make a copy
 
@@ -90,6 +90,10 @@ def decode_protein_tensor(
     if input.sasa is not None:
         sasa = decode_sasa(input.sasa, tokenizers.sasa)
     if input.function is not None:
+        if function_token_decoder is None:
+            raise ValueError(
+                "Cannot decode function annotations without a function token decoder"
+            )
         function_track_annotations = decode_function_annotations(
             input.function,
             function_token_decoder=function_token_decoder,

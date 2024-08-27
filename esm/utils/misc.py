@@ -176,7 +176,7 @@ def unbinpack(
     return stack_variable_length_tensors(unpacked_tensors, pad_value)
 
 
-def fp32_autocast_context(device_type: str) -> ContextManager[torch.amp.autocast]:
+def fp32_autocast_context(device_type: str) -> ContextManager[torch.amp.autocast]:  # type: ignore
     """
     Returns an autocast context manager that disables downcasting by AMP.
 
@@ -187,9 +187,9 @@ def fp32_autocast_context(device_type: str) -> ContextManager[torch.amp.autocast
         An autocast context manager with the specified behavior.
     """
     if device_type == "cpu":
-        return torch.amp.autocast(device_type, enabled=False)
+        return torch.amp.autocast(device_type, enabled=False)  # type: ignore
     elif device_type == "cuda":
-        return torch.amp.autocast(device_type, dtype=torch.float32)
+        return torch.amp.autocast(device_type, dtype=torch.float32)  # type: ignore
     else:
         raise ValueError(f"Unsupported device type: {device_type}")
 

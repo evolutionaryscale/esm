@@ -40,3 +40,19 @@ class EsmTokenizerBase(Protocol):
     @property
     def pad_token_id(self) -> int:
         ...
+
+    @property
+    def chain_break_token(self) -> str:
+        ...
+
+    @property
+    def chain_break_token_id(self) -> int:
+        ...
+
+    @property
+    def all_token_ids(self):
+        ...
+
+    @property
+    def special_token_ids(self):
+        ...

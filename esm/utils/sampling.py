@@ -153,7 +153,9 @@ def validate_sampling_config(
 def sample_logits(
     logits: torch.Tensor,
     temperature: float | torch.Tensor,
+    valid_ids: list[int] = [],
     top_p: float | torch.Tensor = 1.0,
+    mask_logits_of_invalid_ids: bool = True,
 ):
     """Default sampling from logits.
 
@@ -167,14 +169,21 @@ def sample_logits(
 
     temperature = _tensorize_like(temperature, logits)
 
+    batch_dims = logits.size()[:-1]
+    logits = logits.reshape(-1, logits.shape[-1])
+
+    # Only sample from valid ids
+    # the /logits endpoint should receive unmodified logits
+    if mask_logits_of_invalid_ids:
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        mask[:, valid_ids] = False
+        logits[mask] = -torch.inf
+
     if torch.all(temperature == 0):
         ids = logits.argmax(-1)
         return ids
 
     assert not torch.any(temperature == 0), "Partial temperature 0 not supported."
-
-    batch_dims = logits.size()[:-1]
-    logits = logits.reshape(-1, logits.shape[-1])
 
     # Sample from all logits
     probs = F.softmax(logits / temperature[..., None], dim=-1)
@@ -250,7 +259,16 @@ def sample_sasa_logits(
     tokens: torch.Tensor,
     sampling_track_config: SamplingTrackConfig,
     mask_idx: int,
+    valid_ids: list[int],
+    mask_logits_of_invalid_ids: bool = True,
 ) -> torch.Tensor:
+    # Only sample from valid ids
+    # the /logits endpoint should receive unmodified logits
+    if mask_logits_of_invalid_ids:
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        mask[:, valid_ids] = False
+        logits[mask] = -torch.inf
+
     sasa_probs = torch.nn.functional.softmax(logits, dim=-1)
     max_prob_idx = torch.argmax(sasa_probs, dim=-1)
     sasa_bins = torch.tensor([0] + SASA_DISCRETIZATION_BOUNDARIES, dtype=torch.float)

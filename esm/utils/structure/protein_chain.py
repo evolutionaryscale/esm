@@ -213,7 +213,6 @@ class ProteinChain:
         distance = self.pdist_CB
         contacts = (distance < distance_threshold).astype(np.int64)
         contacts[np.isnan(distance)] = -1
-        contacts = squareform(contacts)
         np.fill_diagonal(contacts, -1)
         return contacts
 
@@ -391,15 +390,16 @@ class ProteinChain:
 
     def lddt_ca(
         self,
-        target: ProteinChain,
+        native: ProteinChain,
         mobile_inds: list[int] | np.ndarray | None = None,
         target_inds: list[int] | np.ndarray | None = None,
         **kwargs,
     ) -> float | np.ndarray:
         """Compute the LDDT between this protein chain and another.
+        NOTE: LDDT IS NOT SYMMETRIC. The call should always be prediction.lddt_ca(native).
 
         Arguments:
-            target (ProteinChain): The other protein chain to compare to.
+            native (ProteinChain): The ground truth protein chain
             mobile_inds (list[int], np.ndarray, optional): The indices of the mobile atoms to align. These are NOT residue indices
             target_inds (list[int], np.ndarray, optional): The indices of the target atoms to align. These are NOT residue indices
 
@@ -407,11 +407,10 @@ class ProteinChain:
             float | np.ndarray: The LDDT score between the two protein chains, either
                 a single float or per-residue LDDT scores if `per_residue` is True.
         """
-
         lddt = compute_lddt_ca(
             torch.tensor(self.atom37_positions[mobile_inds]).unsqueeze(0),
-            torch.tensor(target.atom37_positions[target_inds]).unsqueeze(0),
-            torch.tensor(self.atom37_mask[mobile_inds]).unsqueeze(0),
+            torch.tensor(native.atom37_positions[target_inds]).unsqueeze(0),
+            torch.tensor(native.atom37_mask[mobile_inds]).unsqueeze(0),
             **kwargs,
         )
         return float(lddt) if lddt.numel() == 1 else lddt.numpy().flatten()
