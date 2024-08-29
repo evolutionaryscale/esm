@@ -53,6 +53,12 @@ def draw_function_annotations(
         )
         features.append(feature)
 
+    # Initialize plotting backend
+    temp_output = widgets.Output()
+    with temp_output:
+        fig, ax = plt.subplots()
+        temp_output.clear_output()
+
     buf = io.BytesIO()
     with use_backend("agg"):
         fig, ax = plt.subplots()
