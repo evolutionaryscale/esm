@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from torch.cuda.amp import autocast  # type: ignore
+from torch.amp import autocast  # type: ignore
 
 from esm.utils import residue_constants
 from esm.utils.misc import unbinpack
@@ -66,7 +66,7 @@ def infer_cbeta_from_atom37(
 
 
 @torch.no_grad()
-@autocast(enabled=False)
+@autocast("cuda", enabled=False)
 def compute_alignment_tensors(
     mobile: torch.Tensor,
     target: torch.Tensor,
@@ -161,7 +161,7 @@ def compute_alignment_tensors(
 
 
 @torch.no_grad()
-@autocast(enabled=False)
+@autocast("cuda", enabled=False)
 def compute_rmsd_no_alignment(
     aligned: torch.Tensor,
     target: torch.Tensor,
@@ -210,7 +210,7 @@ def compute_rmsd_no_alignment(
 
 
 @torch.no_grad()
-@autocast(enabled=False)
+@autocast("cuda", enabled=False)
 def compute_affine_and_rmsd(
     mobile: torch.Tensor,
     target: torch.Tensor,

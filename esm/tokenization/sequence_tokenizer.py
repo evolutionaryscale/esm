@@ -21,7 +21,7 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
         pad_token="<pad>",
         mask_token="<mask>",
         eos_token="<eos>",
-        chainbreak_token="|",
+        chain_break_token="|",
         **kwargs,
     ):
         all_tokens = C.SEQUENCE_VOCAB
@@ -30,8 +30,15 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
         # a character-level tokenizer is the same as BPE with no token merges
         bpe = BPE(token_to_id, merges=[], unk_token=unk_token)
         tokenizer = Tokenizer(bpe)
-        special_tokens = [cls_token, pad_token, mask_token, eos_token, chainbreak_token]
-        additional_special_tokens = [chainbreak_token]
+        special_tokens = [
+            cls_token,
+            pad_token,
+            mask_token,
+            eos_token,
+            chain_break_token,
+        ]
+        self.cb_token = chain_break_token
+        additional_special_tokens = [chain_break_token]
 
         tokenizer.add_special_tokens(
             special_tokens,
@@ -66,3 +73,19 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
     @property
     def bos_token_id(self):
         return self.cls_token_id
+
+    @property
+    def chain_break_token(self):
+        return self.cb_token
+
+    @property
+    def chain_break_token_id(self):
+        return self.convert_tokens_to_ids(self.chain_break_token)
+
+    @property
+    def all_token_ids(self):
+        return list(range(self.vocab_size))
+
+    @property
+    def special_token_ids(self):
+        return self.all_special_ids

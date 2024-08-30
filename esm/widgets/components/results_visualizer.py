@@ -31,6 +31,7 @@ def create_results_visualizer(
         None,
     ]
     | None = None,
+    include_title: bool = True,
 ) -> widgets.Widget:
     if modality == "structure":
         # Sort structures by pTM
@@ -118,13 +119,16 @@ def create_results_visualizer(
 
     update_page()
 
-    return widgets.VBox(
-        [
-            widgets.HTML(value="<h1>Generated Samples</h1>"),
-            widgets.HBox([prev_button, next_button, page_label]),
-            output,
-        ]
-    )
+    results_ui = widgets.VBox([])
+    title = (widgets.HTML(value="<h1>Generated Samples</h1>"),)
+    nav_bar = widgets.HBox([prev_button, next_button, page_label])
+
+    if include_title:
+        results_ui.children += title
+    if total_pages > 1:
+        results_ui.children += (nav_bar,)
+    results_ui.children += (output,)
+    return results_ui
 
 
 def add_line_breaks(sequence: str, line_length: int = 120) -> str:
@@ -148,15 +152,27 @@ def create_sequence_results_page(
             copy_to_prompt_button.on_click(
                 lambda b: copy_to_prompt_callback(item.sequence)
             )
-        entry = widgets.VBox(
-            [
-                copy_to_prompt_button,
-                widgets.HTML(
-                    value=f'<pre style="white-space: pre-wrap; font-family: monospace;">{add_line_breaks(item.sequence, line_length) if item.sequence else "No sequence"}</pre>'
-                ),
-            ],
-            layout={"border": "1px solid gray"},
-        )
+
+        if copy_to_prompt_callback:
+            entry = widgets.VBox(
+                [
+                    copy_to_prompt_button,
+                    widgets.HTML(
+                        value=f'<pre style="white-space: pre-wrap; font-family: monospace;">{add_line_breaks(item.sequence, line_length) if item.sequence else "No sequence"}</pre>'
+                    ),
+                ],
+                layout={"border": "1px solid gray"},
+            )
+        else:
+            entry = widgets.VBox(
+                [
+                    widgets.HTML(
+                        value=f'<pre style="white-space: pre-wrap; font-family: monospace;">{add_line_breaks(item.sequence, line_length) if item.sequence else "No sequence"}</pre>'
+                    )
+                ],
+                layout={"border": "1px solid gray"},
+            )
+
         sequence_items.append(entry)
 
     return widgets.VBox(sequence_items)
@@ -185,11 +201,17 @@ def create_sasa_results_page(
                     data_array=sasa,
                     cmap="Reds",
                 )
-        sasa_items.append(
-            widgets.VBox(
-                [copy_to_prompt_button, output], layout={"border": "1px solid gray"}
+
+        if copy_to_prompt_callback:
+            sasa_items.append(
+                widgets.VBox(
+                    [copy_to_prompt_button, output], layout={"border": "1px solid gray"}
+                )
             )
-        )
+        else:
+            sasa_items.append(
+                widgets.VBox([output], layout={"border": "1px solid gray"})
+            )
     return widgets.VBox(sasa_items)
 
 
@@ -236,11 +258,15 @@ def create_secondary_structure_results_page(
                     highlighted_ranges=[],
                     cmap="Set2",
                 )
-        ss_items.append(
-            widgets.VBox(
-                [copy_to_prompt_button, output], layout={"border": "1px solid gray"}
+
+        if copy_to_prompt_callback:
+            ss_items.append(
+                widgets.VBox(
+                    [copy_to_prompt_button, output], layout={"border": "1px solid gray"}
+                )
             )
-        )
+        else:
+            ss_items.append(widgets.VBox([output], layout={"border": "1px solid gray"}))
     return widgets.VBox(ss_items)
 
 
@@ -304,8 +330,14 @@ def create_structure_results_page(
             )
         row = i // grid_size
         col = i % grid_size
+
+        if copy_to_prompt_callback:
+            header = widgets.HBox([copy_to_prompt_button, ptm_label])
+        else:
+            header = widgets.HBox([ptm_label])
+
         grid[row, col] = widgets.VBox(
-            [widgets.HBox([copy_to_prompt_button, ptm_label]), output],
+            [header, output],
             layout={"border": "1px solid gray"},
         )
     return grid
@@ -344,10 +376,12 @@ def create_function_annotations_results_page(
                 interpro_annotations,
                 sequence_length=len(item),
             )
-            function_items.append(
-                widgets.VBox(
+            if copy_to_prompt_callback:
+                content = widgets.VBox(
                     [copy_to_prompt_button, image], layout={"border": "1px solid gray"}
                 )
-            )
+            else:
+                content = widgets.VBox([image], layout={"border": "1px solid gray"})
+            function_items.append(content)
 
     return widgets.VBox(function_items)

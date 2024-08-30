@@ -1,6 +1,6 @@
 [project]
 name = "esm"
-version = "3.0.3"
+version = "3.0.4"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,7 +27,7 @@ dependencies = [
   "transformers",
   "ipython",
   "einops",
-  "biotite",
+  "biotite==0.41.2",
   "msgpack-numpy",
   "biopython",
   "scikit-learn",

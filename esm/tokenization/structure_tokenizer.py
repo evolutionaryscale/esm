@@ -1,12 +1,19 @@
 from esm.tokenization.tokenizer_base import EsmTokenizerBase
+from esm.utils.constants import esm3 as C
 
 
 class StructureTokenizer(EsmTokenizerBase):
     """A convenince class for accessing special token ids of
     the StructureTokenEncoder and StructureTokenDecoder."""
 
-    def __init__(self, vq_vae_special_tokens: dict[str, int]):
-        self.vq_vae_special_tokens = vq_vae_special_tokens
+    def __init__(self, cookbook_size: int = C.VQVAE_CODEBOOK_SIZE):
+        self.vq_vae_special_tokens = {
+            "MASK": cookbook_size,
+            "EOS": cookbook_size + 1,
+            "BOS": cookbook_size + 2,
+            "PAD": cookbook_size + 3,
+            "CHAINBREAK": cookbook_size + 4,
+        }
 
     def mask_token(self) -> str:
         raise NotImplementedError(
@@ -44,9 +51,22 @@ class StructureTokenizer(EsmTokenizerBase):
     def pad_token_id(self) -> int:
         return self.vq_vae_special_tokens["PAD"]
 
+    def chain_break_token(self) -> str:
+        raise NotImplementedError(
+            "Structure tokens are defined on 3D coordinates, not strings."
+        )
+
     @property
-    def chainbreak_token_id(self) -> int:
+    def chain_break_token_id(self) -> int:
         return self.vq_vae_special_tokens["CHAINBREAK"]
+
+    @property
+    def all_token_ids(self):
+        return list(range(C.VQVAE_CODEBOOK_SIZE + len(self.vq_vae_special_tokens)))
+
+    @property
+    def special_token_ids(self):
+        return self.vq_vae_special_tokens.values()
 
     def encode(self, *args, **kwargs):
         raise NotImplementedError(

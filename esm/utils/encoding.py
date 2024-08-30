@@ -174,11 +174,17 @@ def get_default_sequence_tokens(
     sequence_length: int,
     sequence_tokenizer: EsmSequenceTokenizer,
 ) -> torch.Tensor:
-    return tokenize_sequence(
-        get_default_sequence(sequence_length),
-        sequence_tokenizer,
-        add_special_tokens=True,
+    assert sequence_tokenizer.mask_token_id is not None
+    assert sequence_tokenizer.bos_token_id is not None
+    assert sequence_tokenizer.eos_token_id is not None
+
+    sequence_tokens = torch.full(
+        (sequence_length + 2,), sequence_tokenizer.mask_token_id
     )
+    sequence_tokens[0] = sequence_tokenizer.bos_token_id
+    sequence_tokens[-1] = sequence_tokenizer.eos_token_id
+
+    return sequence_tokens
 
 
 def get_default_structure_tokens(
@@ -200,19 +206,22 @@ def get_default_structure_tokens(
 def get_default_secondary_structure_tokens(
     sequence_length: int, secondary_structure_tokenizer: SecondaryStructureTokenizer
 ) -> torch.Tensor:
-    return tokenize_secondary_structure(
-        get_default_secondary_structure(sequence_length),
-        secondary_structure_tokenizer,
-        add_special_tokens=True,
+    ss8_tokens = torch.full(
+        (sequence_length + 2,), secondary_structure_tokenizer.mask_token_id
     )
+    ss8_tokens[0] = secondary_structure_tokenizer.bos_token_id
+    ss8_tokens[-1] = secondary_structure_tokenizer.eos_token_id
+
+    return ss8_tokens
 
 
 def get_default_sasa_tokens(
     sequence_length: int, sasa_tokenizer: SASADiscretizingTokenizer
 ) -> torch.Tensor:
-    return tokenize_sasa(
-        get_default_sasa(sequence_length), sasa_tokenizer, add_special_tokens=True
-    )
+    sasa_tokens = torch.full((sequence_length + 2,), sasa_tokenizer.mask_token_id)
+    sasa_tokens[0] = sasa_tokenizer.bos_token_id
+    sasa_tokens[-1] = sasa_tokenizer.eos_token_id
+    return sasa_tokens
 
 
 def get_default_function_tokens(
