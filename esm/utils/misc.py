@@ -186,7 +186,7 @@ def fp32_autocast_context(device_type: str) -> ContextManager[torch.amp.autocast
     Returns:
         An autocast context manager with the specified behavior.
     """
-    if device_type == "cpu":
+    if device_type == "cpu" or device_type == "mps":
         return torch.amp.autocast(device_type, enabled=False)  # type: ignore
     elif device_type == "cuda":
         return torch.amp.autocast(device_type, dtype=torch.float32)  # type: ignore
