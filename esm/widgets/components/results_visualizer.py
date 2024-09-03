@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Literal
 
@@ -14,6 +15,10 @@ from esm.widgets.utils.drawing.draw_function_annotations import (
 )
 from esm.widgets.utils.drawing.draw_protein_structure import (
     draw_protein_structure,
+)
+from esm.widgets.utils.serialization import (
+    create_download_button_from_buffer,
+    protein_to_pdb_buffer,
 )
 
 
@@ -294,6 +299,13 @@ def create_structure_results_page(
             copy_to_prompt_button.on_click(
                 lambda b: copy_to_prompt_callback(item.coordinates)
             )
+
+        download_pdb_button = create_download_button_from_buffer(
+            protein_to_pdb_buffer(item),
+            filename=f"generation_{i:02d}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdb",
+            description="Download PDB",
+        )
+
         output = widgets.Output()
         if item.coordinates is None:
             with output:
@@ -332,9 +344,11 @@ def create_structure_results_page(
         col = i % grid_size
 
         if copy_to_prompt_callback:
-            header = widgets.HBox([copy_to_prompt_button, ptm_label])
+            header = widgets.HBox(
+                [copy_to_prompt_button, download_pdb_button, ptm_label]
+            )
         else:
-            header = widgets.HBox([ptm_label])
+            header = widgets.HBox([download_pdb_button, ptm_label])
 
         grid[row, col] = widgets.VBox(
             [header, output],

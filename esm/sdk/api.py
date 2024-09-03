@@ -17,7 +17,6 @@ from esm.utils.constants.models import ESM3_OPEN_SMALL
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import (
     FunctionAnnotation,
-    PathLike,
     PathOrBuffer,
 )
 
@@ -95,7 +94,7 @@ class ESMProtein(ProteinType):
                 coordinates=torch.tensor(protein_chain.atom37_positions),
             )
 
-    def to_pdb(self, pdb_path: PathLike) -> None:
+    def to_pdb(self, pdb_path: PathOrBuffer) -> None:
         protein_chain = self.to_protein_chain().infer_oxygen()
         protein_chain.to_pdb(pdb_path)
 
