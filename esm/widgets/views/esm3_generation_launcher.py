@@ -18,7 +18,7 @@ from esm.widgets.components.results_visualizer import (
 )
 from esm.widgets.utils.printing import wrapped_print
 from esm.widgets.utils.serialization import (
-    create_download_button,
+    create_download_results_button,
 )
 
 
@@ -217,7 +217,7 @@ def create_esm3_generation_launcher(
         now = datetime.datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S")
         filename = f"generated_proteins_{track.value}_{timestamp}.json"
-        download_button = create_download_button(proteins, filename)
+        download_button = create_download_results_button(proteins, filename)
         generation_config_ui.children = [
             *generation_config_ui.children,
             download_button,

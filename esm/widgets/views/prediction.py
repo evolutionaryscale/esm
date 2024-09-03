@@ -29,9 +29,9 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         ]
     )
 
-    input_ui = widgets.Tab(children=[protein_importer.importer_ui, sequence_input_ui])
-    input_ui.set_title(0, "Add Protein")
-    input_ui.set_title(1, "Enter Sequence")
+    input_ui = widgets.Tab(children=[sequence_input_ui, protein_importer.importer_ui])
+    input_ui.set_title(0, "Enter Sequence")
+    input_ui.set_title(1, "Add Protein")
 
     predict_button = widgets.Button(
         description="Predict",
@@ -45,7 +45,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
     prediction_ui = widgets.VBox([input_ui, output])
 
     def get_protein() -> ESMProtein:
-        if input_ui.selected_index == 0:
+        if input_ui.selected_index == 1:
             [first_protein] = protein_importer.protein_list
             protein_id, protein_chain = first_protein
             protein = ESMProtein.from_protein_chain(protein_chain)
@@ -70,7 +70,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         prediction_ui.children = [input_ui, predict_button, output]
 
     def validate_predict(_):
-        if input_ui.selected_index == 0:
+        if input_ui.selected_index == 1:
             if len(protein_importer.protein_list) > 0:
                 predict_button.disabled = False
             else:
