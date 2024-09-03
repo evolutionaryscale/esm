@@ -6,13 +6,13 @@ class StructureTokenizer(EsmTokenizerBase):
     """A convenince class for accessing special token ids of
     the StructureTokenEncoder and StructureTokenDecoder."""
 
-    def __init__(self, cookbook_size: int = C.VQVAE_CODEBOOK_SIZE):
+    def __init__(self, codebook_size: int = C.VQVAE_CODEBOOK_SIZE):
         self.vq_vae_special_tokens = {
-            "MASK": cookbook_size,
-            "EOS": cookbook_size + 1,
-            "BOS": cookbook_size + 2,
-            "PAD": cookbook_size + 3,
-            "CHAINBREAK": cookbook_size + 4,
+            "MASK": codebook_size,
+            "EOS": codebook_size + 1,
+            "BOS": codebook_size + 2,
+            "PAD": codebook_size + 3,
+            "CHAINBREAK": codebook_size + 4,
         }
 
     def mask_token(self) -> str:
