@@ -1,7 +1,8 @@
 # ESM3
+
 [ESM3](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model) is a frontier generative model for biology, able to jointly reason across three fundamental biological properties of proteins: sequence, structure, and function. These three data modalities are represented as tracks of discrete tokens at the input and output of ESM3. You can present the model with a combination of partial inputs across the tracks, and ESM3 will provide output predictions for all the tracks.
 
-ESM3 is a *generative* masked language model. You can prompt it with partial sequence, structure, and function keywords, and iteratively sample masked positions until all positions are unmasked. This iterative sampling is what the `.generate()` function does.
+ESM3 is a _generative_ masked language model. You can prompt it with partial sequence, structure, and function keywords, and iteratively sample masked positions until all positions are unmasked. This iterative sampling is what the `.generate()` function does.
 
 <!--![ESM3 Diagram](_assets/esm3_diagram.png)-->
 <img src="_assets/esm3_diagram.png" alt="ESM3 Diagram" width="400" />
@@ -12,7 +13,6 @@ Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3
 Here we present `esm3-open-small`. With 1.4B parameters it is the smallest and fastest model in the family.
 ESM3-open is available under a [non-commercial license](https://www.evolutionaryscale.ai/policies/community-license-agreement), reproduced under `LICENSE.md`.
 Visit our [Discussions page](https://github.com/evolutionaryscale/esm/discussions) to get in touch, provide feedback, ask questions or share your experience with ESM3!
-
 
 ## Quickstart for ESM3-open
 
@@ -61,10 +61,12 @@ Let's explore some more advanced prompting with the help of our [notebooks and s
 [<img src="https://colab.research.google.com/assets/colab-badge.svg">](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/examples/gfp_design.ipynb)
 
 We also provide example scripts that show common workflows under `examples/`:
-* [local_generate.py](./examples/local_generate.py) shows how simple and elegant common tasks are: it shows folding, inverse folding and chain of thought generation, all by calling just `model.generate()` for iterative decoding.
-* [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
+
+- [local_generate.py](./examples/local_generate.py) shows how simple and elegant common tasks are: it shows folding, inverse folding and chain of thought generation, all by calling just `model.generate()` for iterative decoding.
+- [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
 ## Forge: Access to larger ESM3 models
+
 You can apply for beta access to the full family of larger and higher capability ESM3 models at [EvolutionaryScale Forge](https://forge.evolutionaryscale.ai).
 
 We encourage users to interact with the Forge API through the python `esm` library instead of the command line.
@@ -72,14 +74,16 @@ The python interface enables you to interactively load proteins, build prompts, 
 with the `ESMProtein` and config classes used to interact with the local model.
 
 In any example script try to replace a local `ESM3` model with a Forge API client:
+
 ```py
 # Instead of loading the model locally on your machine:
 model: ESM3InferenceClient = ESM3.from_pretrained("esm3_sm_open_v1").to("cuda") # or "cpu"
 # just replace the line with this:
-model: ESM3InferenceClient = esm.sdk.client("esm3-md-v1", token="<your forge token>")
+model: ESM3InferenceClient = esm.sdk.client("esm3-medium-2024-08", token="<your forge token>")
 # and now you're interfacing with the model running on our remote servers.
 ...
 ```
+
 and the exact same code will work.
 This enables a seamless transition from smaller and faster models, to our large 98B protein language models for protein design work.
 
@@ -96,7 +100,6 @@ The core tenets of our framework are
 
 With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model)
 
-
 ## License
 
 **The Big Picture:**
@@ -112,6 +115,5 @@ With this in mind, we have performed a variety of mitigations for `esm3-sm-open-
    3. to **train** a AI-powered third party model **similar to EvolutionaryScale’s AI Model**, even for non-commercial usage. You may, however, create **Derivative Works** of ESM3, for example by finetuning or adding model layers.
 
 3. You **can publish, share and adapt** the EvolutionaryScale AI Model and its outputs for **non-commercial purposes** in accordance with the Community License Agreement, including a **non-commercial restriction** on the adapted model.
-
 
 Please read our non-commercial [Community License Agreement](https://www.evolutionaryscale.ai/policies/community-license-agreement) reproduced under [./LICENSE.md](LICENSE.md) before using ESM3.

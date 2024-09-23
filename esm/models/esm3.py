@@ -34,7 +34,10 @@ from esm.tokenization import (
 )
 from esm.utils import encoding
 from esm.utils.constants import esm3 as C
-from esm.utils.constants.models import ESM3_OPEN_SMALL
+from esm.utils.constants.models import (
+    ESM3_OPEN_SMALL,
+    normalize_model_name,
+)
 from esm.utils.decoding import decode_protein_tensor
 from esm.utils.generation import (
     _batch_forward,
@@ -240,7 +243,8 @@ class ESM3(nn.Module, ESM3InferenceClient):
     ) -> ESM3:
         from esm.pretrained import load_local_model
 
-        if model_name not in [ESM3_OPEN_SMALL]:
+        model_name = normalize_model_name(model_name)
+        if not model_name:
             raise ValueError(f"Model name {model_name} is not a valid ESM3 model name.")
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -253,6 +257,10 @@ class ESM3(nn.Module, ESM3InferenceClient):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    @property
+    def raw_model(self):
+        return self
 
     def get_structure_encoder(self) -> StructureTokenEncoder:
         if self._structure_encoder is None:
