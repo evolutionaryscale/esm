@@ -202,6 +202,7 @@ class ESMProteinTensor(ProteinType):
 
 @define
 class ESMProteinError(Exception, ProteinType):
+    error_code: int  # Error code follows HTTP convention, i.e., 404 NotFoundError, 500 InternalError.
     error_msg: str
 
 
@@ -342,4 +343,9 @@ class ESM3InferenceClient(ABC):
         # forward_and_sample runs a single model forward, sampling tokens according to `SamplingConfiguration`.
         # This is the way for power users to run ESM3. We hope to design this in a way to enable high throughput
         # inference, as well as arbitrary chain-of-though invocations of ESM3.
+        raise NotImplementedError
+
+    @property
+    def raw_model(self):
+        # Get underlying esm3 model of an inference client.
         raise NotImplementedError

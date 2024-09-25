@@ -299,6 +299,23 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     return where_to_sample
 
 
+def _get_non_special_tokens(
+    protein: ESMProteinTensor, tokenizers: TokenizerCollectionProtocol
+) -> int:
+    if protein.sequence is None:
+        # There is no sequence to infer the number of tokens to decode.
+        # So we assume the entire sequence minus bos and eos are for decoding.
+        return len(protein) - 2
+
+    mask = torch.ones_like(protein.sequence)
+    for special_token in tokenizers.sequence.special_token_ids:
+        if special_token == tokenizers.sequence.mask_token_id:
+            continue  # MASK tokens need to be sampled.
+        mask[protein.sequence == special_token] = 0
+
+    return int(torch.sum(mask).item())
+
+
 def iterative_sampling_tokens(
     client: ESM3InferenceClient,
     input_tokens: list[ESMProteinTensor],
@@ -320,12 +337,12 @@ def iterative_sampling_tokens(
     sequence_lengths = [len(tokens) for tokens in sampled_tokens]
     # Figure out the number of tokens to be sampled for each prompt.
     total_to_sample = []
-    for protein, seq_len, config in zip(sampled_tokens, sequence_lengths, configs):
+    for protein, config in zip(sampled_tokens, configs):
         track = config.track
 
         if getattr(protein, track) is None:
             # We need to sample the entire track.
-            total_to_sample.append(seq_len - 2)
+            total_to_sample.append(_get_non_special_tokens(protein, tokenizers))
             continue
 
         masked = _get_masked_positions(
@@ -368,7 +385,8 @@ def iterative_sampling_tokens(
 
             if config.track in ["coordinates", "residue_annotations"]:
                 errors[i] = ESMProteinError(
-                    error_msg=f"Iterative sampling {config.track} is not supported."
+                    error_code=500,
+                    error_msg=f"Iterative sampling {config.track} is not supported.",
                 )
                 continue
 
@@ -427,7 +445,7 @@ def iterative_sampling_tokens(
                     tokenizers,
                 )
             except ValueError as e:
-                errors[i] = ESMProteinError(error_msg=str(e))
+                errors[i] = ESMProteinError(error_code=500, error_msg=str(e))
                 continue
 
             where_to_sample.to(input_tokens[0].device)
@@ -547,7 +565,7 @@ def _sample_per_prompt(
 
             valid_ids = (
                 set(tokenizers.sasa.all_token_ids)
-                - set(tokenizer.special_token_ids)
+                - set(tokenizers.sasa.special_token_ids)
                 - set(config.invalid_ids)
             )
             sasa_logits = logits_output.logits.sasa
@@ -568,7 +586,8 @@ def _sample_per_prompt(
 
     # Sample function and residue annotations separately
     config = getattr(sampling_config, "function")
-    if config is None:
+    function_logits = getattr(logits_output.logits, "function")
+    if config is None or function_logits is None:
         tokens_dir["function"] = maybe_clone(getattr(protein, "function"))
         tokens_dir["residue_annotations"] = maybe_clone(
             getattr(protein, "residue_annotations")
@@ -580,7 +599,7 @@ def _sample_per_prompt(
         sampling_metadata = _sample_function_track(
             tokenizers.function,
             tokens=getattr(protein, "function"),
-            logits=getattr(logits_output.logits, "function"),
+            logits=function_logits,
             sampling_track_config=config,
         )
         tokens_dir["function"] = sampling_metadata.pop("sampled_tokens")  # (L, D)

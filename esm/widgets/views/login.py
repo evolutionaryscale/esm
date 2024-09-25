@@ -92,7 +92,7 @@ def create_login_ui(client_container: ClientInitContainer):
         layout={"width": "50%"},
     )
     forge_model = widgets.Text(
-        value="esm3-md-v1",
+        value="esm3-medium-2024-08",
         description="Model Name:",
         disabled=False,
         layout={"width": "50%"},

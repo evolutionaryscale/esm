@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from esm.utils.constants.models import ESM3_OPEN_SMALL
+from esm.utils.constants.models import (
+    ESM3_OPEN_SMALL,
+    normalize_model_name,
+)
 
 from .function_tokenizer import InterProQuantizedTokenizer
 from .residue_tokenizer import ResidueAnnotationsTokenizer
@@ -32,7 +35,7 @@ class TokenizerCollection:
 
 
 def get_model_tokenizers(model: str = ESM3_OPEN_SMALL) -> TokenizerCollection:
-    if model == ESM3_OPEN_SMALL:
+    if normalize_model_name(model) == ESM3_OPEN_SMALL:
         return TokenizerCollection(
             sequence=EsmSequenceTokenizer(),
             structure=StructureTokenizer(),

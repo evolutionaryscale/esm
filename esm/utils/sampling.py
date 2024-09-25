@@ -163,6 +163,10 @@ def sample_logits(
         logits is shape (..., vocab_size)
         temperature is broadcastable to (...)
     """
+    if len(valid_ids) == 0:
+        raise ValueError(
+            "Can not sample logits if there are no valid ids to sample from."
+        )
 
     if top_p < 1.0:
         logits = top_p_logits(logits, top_p=top_p)
@@ -181,7 +185,7 @@ def sample_logits(
 
     if torch.all(temperature == 0):
         ids = logits.argmax(-1)
-        return ids
+        return ids.reshape(*batch_dims)
 
     assert not torch.any(temperature == 0), "Partial temperature 0 not supported."
 

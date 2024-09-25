@@ -157,7 +157,10 @@ def create_esm3_generation_launcher(
                         model=model_name.value, token=forge_token
                     )
                 elif isinstance(client, ESM3):
-                    if model_name.value != models.ESM3_OPEN_SMALL:
+                    if (
+                        models.normalize_model_name(model_name.value)
+                        != models.ESM3_OPEN_SMALL
+                    ):
                         raise ValueError(
                             f"Model name {model_name.value} does not match the client model {models.ESM3_OPEN_SMALL}"
                         )
