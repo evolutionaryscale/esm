@@ -35,6 +35,7 @@ dependencies = [
   "attrs",
   "pandas",
   "cloudpathlib",
+  "tenacity"
 ]
 
 [tool.setuptools.packages.find]
