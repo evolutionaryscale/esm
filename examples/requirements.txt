@@ -1,0 +1,3 @@
+matplotlib
+ipykernel
+huggingface_hub
