@@ -114,6 +114,11 @@ def data_root():
     return path
 
 
+IN_REPO_DATA_FOLDER = Path(__file__).parents[2] / "data"
+
+INTERPRO_ENTRY = IN_REPO_DATA_FOLDER / "entry_list_safety_29026.list"
+INTERPRO_HIERARCHY = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
+INTERPRO2GO = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
 INTERPRO_2ID = "data/tag_dict_4_safety_filtered.json"
 
 LSH_TABLE_PATHS = {

@@ -103,16 +103,9 @@ class InterPro:
         def default(x, d):
             return x if x is not None else d
 
-        in_repo_data_folder = Path(__file__).parents[2] / "data"
-        self.entries_path = default(
-            entries_path, in_repo_data_folder / "entry_list_safety_29026.list"
-        )
-        self.hierarchy_graph_path = default(
-            hierarchy_path, in_repo_data_folder / "ParentChildTreeFile.txt"
-        )
-        self.interpro2go_path = default(
-            interpro2go_path, in_repo_data_folder / "ParentChildTreeFile.txt"
-        )
+        self.entries_path = default(entries_path, C.INTERPRO_ENTRY)
+        self.hierarchy_graph_path = default(hierarchy_path, C.INTERPRO_HIERARCHY)
+        self.interpro2go_path = default(interpro2go_path, C.INTERPRO2GO)
 
     @cached_property
     def interpro2go(self) -> dict[str, list[str]]:

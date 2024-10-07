@@ -22,6 +22,10 @@ def _default_data_path(x: PathLike | None, d: PathLike) -> PathLike:
     return x if x is not None else C.data_root() / d
 
 
+def _default_local_data_path(x: PathLike | None, d: PathLike) -> PathLike:
+    return x if x is not None else d
+
+
 class InterProQuantizedTokenizer(EsmTokenizerBase):
     """Tokenizer for functional annotations.
 
@@ -63,7 +67,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
             interpro2keywords_path, C.INTERPRO2KEYWORDS
         )
         self.interpro_ = interpro.InterPro(
-            entries_path=_default_data_path(interpro_entry_path, C.INTERPRO_ENTRY)
+            entries_path=_default_local_data_path(interpro_entry_path, C.INTERPRO_ENTRY)
         )
 
         self.lsh_path = lsh_path
