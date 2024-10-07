@@ -114,9 +114,6 @@ def data_root():
     return path
 
 
-INTERPRO_ENTRY = "data/entry_list_safety_29026.list"
-INTERPRO_HIERARCHY = "data/ParentChildTreeFile.txt"
-INTERPRO2GO = "data/ParentChildTreeFile.txt"
 INTERPRO_2ID = "data/tag_dict_4_safety_filtered.json"
 
 LSH_TABLE_PATHS = {

@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum, auto
 from functools import cached_property
+from pathlib import Path
 
 import networkx as nx
 import pandas as pd
@@ -26,7 +27,7 @@ def parse_go_terms(text: str) -> list[str]:
     return re.findall(r"GO:(?:\d{7,})", text)
 
 
-def _parse_interpro2go(path: str) -> dict[str, list[str]]:
+def _parse_interpro2go(path: PathLike) -> dict[str, list[str]]:
     """Parses InterPro2GO file into map.
 
     NOTE: this file has a very strange, non-standard format.
@@ -98,13 +99,19 @@ class InterPro:
         interpro2go_path: PathLike | None = None,
     ):
         """Constructs interface to query InterPro entries."""
-        default = lambda x, d: x if x is not None else d
-        self.entries_path = default(entries_path, str(C.data_root() / C.INTERPRO_ENTRY))
+
+        def default(x, d):
+            return x if x is not None else d
+
+        in_repo_data_folder = Path(__file__).parents[2] / "data"
+        self.entries_path = default(
+            entries_path, in_repo_data_folder / "entry_list_safety_29026.list"
+        )
         self.hierarchy_graph_path = default(
-            hierarchy_path, str(C.data_root() / C.INTERPRO_HIERARCHY)
+            hierarchy_path, in_repo_data_folder / "ParentChildTreeFile.txt"
         )
         self.interpro2go_path = default(
-            interpro2go_path, str(C.data_root() / C.INTERPRO2GO)
+            interpro2go_path, in_repo_data_folder / "ParentChildTreeFile.txt"
         )
 
     @cached_property
