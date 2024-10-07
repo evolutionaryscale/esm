@@ -39,9 +39,7 @@ class FunctionTokenDecoderConfig:
     # Number of function keywords that can be decoded.
     keyword_vocabulary_size: int = 58641
     # List of supported InterPro ids.
-    interpro_entry_list: str = field(
-        default_factory=lambda: str(C.data_root() / C.INTERPRO_ENTRY)
-    )
+    interpro_entry_list: str = field(default_factory=lambda: str(C.INTERPRO_ENTRY))
     # Path to keywords vocabulary.
     keyword_vocabulary_path: str = field(
         default_factory=lambda: str(C.data_root() / C.KEYWORDS_VOCABULARY)
