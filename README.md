@@ -79,7 +79,7 @@ In any example script try to replace a local `ESM3` model with a Forge API clien
 # Instead of loading the model locally on your machine:
 model: ESM3InferenceClient = ESM3.from_pretrained("esm3_sm_open_v1").to("cuda") # or "cpu"
 # just replace the line with this:
-model: ESM3InferenceClient = esm.sdk.client("esm3-medium-2024-08", token="<your forge token>")
+model: ESM3InferenceClient = esm.sdk.client("esm3-open", token="<your forge token>")
 # and now you're interfacing with the model running on our remote servers.
 ...
 ```
