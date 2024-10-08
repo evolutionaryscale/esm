@@ -41,3 +41,6 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["esm*"]
+
+[tool.setuptools.package-data]
+mypackage = ["esm/data/*"]

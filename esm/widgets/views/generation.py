@@ -166,7 +166,7 @@ def create_generation_ui(
                 value = "".join(value)
 
             elif modality == "secondary_structure":
-                value = [C.MASK_STR_SHORT if x == C.SS8_UNK_TOKEN else x for x in value]
+                value = [C.MASK_STR_SHORT if x == C.SS8_PAD_TOKEN else x for x in value]
                 value = "".join(value)
 
             setattr(protein, modality, value)
