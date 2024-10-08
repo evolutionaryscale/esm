@@ -92,7 +92,7 @@ def create_login_ui(client_container: ClientInitContainer):
         layout={"width": "50%"},
     )
     forge_model = widgets.Text(
-        value="esm3-medium-2024-08",
+        value="esm3-open",
         description="Model Name:",
         disabled=False,
         layout={"width": "50%"},
@@ -117,6 +117,7 @@ def create_login_ui(client_container: ClientInitContainer):
         forge.children = [forge_login_view]
 
     def on_selection_change(change):
+        client_container.metadata["inference_option"] = change["new"]
         if change["new"] == "Forge API":
             model_selection_ui.children = [
                 model_selection_header,

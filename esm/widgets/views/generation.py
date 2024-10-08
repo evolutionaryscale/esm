@@ -6,7 +6,6 @@ from esm.sdk.api import (
     ESM3InferenceClient,
     ESMProtein,
 )
-from esm.tokenization import get_model_tokenizers
 from esm.utils.constants import esm3 as C
 from esm.widgets.components.function_annotator import (
     create_function_annotator,
@@ -106,11 +105,6 @@ def create_generation_ui(
         [protein_importer_ui, protein_length_ui, function_annotator_ui, compile_ui]
     )
 
-    # Tokenizers
-    # NOTE: Uses the esm3 open tokenizer for formatting utilities.
-    # Once the raw request is sent to the server, the server will use the correct tokenizer for the selected model
-    tokenizers = get_model_tokenizers()
-
     # Callbacks
     def update_selector(*args, **kwargs):
         nonlocal prompt_manager_collection
@@ -167,18 +161,12 @@ def create_generation_ui(
         if protein is not None:
             if modality == "sequence":
                 value = [
-                    C.MASK_STR_SHORT if x == tokenizers.sequence.mask_token else x
-                    for x in value
+                    C.MASK_STR_SHORT if x == C.SEQUENCE_MASK_TOKEN else x for x in value
                 ]
                 value = "".join(value)
 
             elif modality == "secondary_structure":
-                value = [
-                    C.MASK_STR_SHORT
-                    if x == tokenizers.secondary_structure.mask_token
-                    else x
-                    for x in value
-                ]
+                value = [C.MASK_STR_SHORT if x == C.SS8_PAD_TOKEN else x for x in value]
                 value = "".join(value)
 
             setattr(protein, modality, value)

@@ -1,7 +1,9 @@
 import math
+import os
 from collections import defaultdict
 from typing import ContextManager, Sequence, TypeVar
 
+import huggingface_hub
 import numpy as np
 import torch
 
@@ -288,3 +290,10 @@ def maybe_list(x, convert_nan_to_none: bool = False) -> list | None:
     if convert_nan_to_none:
         x = list_nan_to_none(x)
     return x
+
+
+def huggingfacehub_login():
+    """Authenticates with the Hugging Face Hub using the HF_TOKEN environment
+    variable, else by prompting the user"""
+    token = os.environ.get("HF_TOKEN")
+    huggingface_hub.login(token=token)

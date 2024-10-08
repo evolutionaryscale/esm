@@ -1,6 +1,6 @@
 [project]
 name = "esm"
-version = "3.0.5"
+version = "3.0.6"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,6 +38,13 @@ dependencies = [
   "tenacity"
 ]
 
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["esm*"]
+
+[tool.setuptools.package-data]
+esm = ["data/*"]
