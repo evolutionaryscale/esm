@@ -125,8 +125,10 @@ LSH_TABLE_PATHS = {
     "8bit": "data/hyperplanes_8bit_58641.npz",
 }
 
-KEYWORDS_VOCABULARY = "data/keyword_vocabulary_safety_filtered_58641.txt"
-KEYWORDS_IDF = "data/keyword_idf_safety_filtered_58641.npy"
+KEYWORDS_VOCABULARY = (
+    IN_REPO_DATA_FOLDER / "keyword_vocabulary_safety_filtered_58641.txt"
+)
+KEYWORDS_IDF = IN_REPO_DATA_FOLDER / "keyword_idf_safety_filtered_58641.npy"
 
 RESID_CSV = "data/uniref90_and_mgnify90_residue_annotations_gt_1k_proteins.csv"
-INTERPRO2KEYWORDS = "data/interpro_29026_to_keywords_58641.csv"
+INTERPRO2KEYWORDS = IN_REPO_DATA_FOLDER / "interpro_29026_to_keywords_58641.csv"
