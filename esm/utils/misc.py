@@ -1,5 +1,6 @@
 import math
 from collections import defaultdict
+from contextlib import nullcontext
 from typing import ContextManager, Sequence, TypeVar
 
 import numpy as np
@@ -188,6 +189,9 @@ def fp32_autocast_context(device_type: str) -> ContextManager[torch.amp.autocast
     """
     if device_type == "cpu":
         return torch.amp.autocast(device_type, enabled=False)  # type: ignore
+    elif device_type == "mps":
+        # For MPS, just return a no-op context manager (nullcontext) since MPS does not support autocast.
+        return nullcontext()
     elif device_type == "cuda":
         return torch.amp.autocast(device_type, dtype=torch.float32)  # type: ignore
     else:
