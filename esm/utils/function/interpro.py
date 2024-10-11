@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum, auto
 from functools import cached_property
-from pathlib import Path
 
 import networkx as nx
 import pandas as pd
