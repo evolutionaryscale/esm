@@ -98,13 +98,6 @@ TFIDF_VECTOR_SIZE = 58641
 @staticmethod
 @cache
 def data_root():
-    # Try a few default directories
-    for path in [
-        "esm/data",
-        "esm/data",
-    ]:
-        if (p := Path(path)).exists():
-            return p.parent
     if "INFRA_PROVIDER" in os.environ:
         return Path("")
     # Try to download from hugginface if it doesn't exist
