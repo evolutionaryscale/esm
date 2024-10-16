@@ -26,7 +26,7 @@ def parse_go_terms(text: str) -> list[str]:
     return re.findall(r"GO:(?:\d{7,})", text)
 
 
-def _parse_interpro2go(path: str) -> dict[str, list[str]]:
+def _parse_interpro2go(path: PathLike) -> dict[str, list[str]]:
     """Parses InterPro2GO file into map.
 
     NOTE: this file has a very strange, non-standard format.
@@ -98,14 +98,13 @@ class InterPro:
         interpro2go_path: PathLike | None = None,
     ):
         """Constructs interface to query InterPro entries."""
-        default = lambda x, d: x if x is not None else d
-        self.entries_path = default(entries_path, str(C.data_root() / C.INTERPRO_ENTRY))
-        self.hierarchy_graph_path = default(
-            hierarchy_path, str(C.data_root() / C.INTERPRO_HIERARCHY)
-        )
-        self.interpro2go_path = default(
-            interpro2go_path, str(C.data_root() / C.INTERPRO2GO)
-        )
+
+        def default(x, d):
+            return x if x is not None else d
+
+        self.entries_path = default(entries_path, C.INTERPRO_ENTRY)
+        self.hierarchy_graph_path = default(hierarchy_path, C.INTERPRO_HIERARCHY)
+        self.interpro2go_path = default(interpro2go_path, C.INTERPRO2GO)
 
     @cached_property
     def interpro2go(self) -> dict[str, list[str]]:

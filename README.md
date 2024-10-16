@@ -33,7 +33,7 @@ from esm.sdk.api import ESM3InferenceClient, ESMProtein, GenerationConfig
 login()
 
 # This will download the model weights and instantiate the model on your machine.
-model: ESM3InferenceClient = ESM3.from_pretrained("esm3_sm_open_v1").to("cuda") # or "cpu"
+model: ESM3InferenceClient = ESM3.from_pretrained("esm3-open").to("cuda") # or "cpu"
 
 # Generate a completion for a partial Carbonic Anhydrase (2vvb)
 prompt = "___________________________________________________DQATSLRILNNGHAFNVEFDDSQDKAVLKGGPLDGTYRLIQFHFHWGSLDGQGSEHTVDKKKYAAELHLVHWNTKYGDFGKAVQQPDGLAVLGIFLKVGSAKPGLQKVVDVLDSIKTKGKSADFTNFDPRGLLPESLDYWTYPGSLTTPP___________________________________________________________"

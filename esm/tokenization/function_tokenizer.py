@@ -22,6 +22,10 @@ def _default_data_path(x: PathLike | None, d: PathLike) -> PathLike:
     return x if x is not None else C.data_root() / d
 
 
+def _default_local_data_path(x: PathLike | None, d: PathLike) -> PathLike:
+    return x if x is not None else d
+
+
 class InterProQuantizedTokenizer(EsmTokenizerBase):
     """Tokenizer for functional annotations.
 
@@ -54,16 +58,18 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
         """
         self.depth = depth
 
-        self.keyword_vocabulary_path = _default_data_path(
+        self.keyword_vocabulary_path = _default_local_data_path(
             keyword_vocabulary_path, C.KEYWORDS_VOCABULARY
         )
-        self.keyword_idf_path = _default_data_path(keyword_idf_path, C.KEYWORDS_IDF)
+        self.keyword_idf_path = _default_local_data_path(
+            keyword_idf_path, C.KEYWORDS_IDF
+        )
 
-        self._interpro2keywords_path = _default_data_path(
+        self._interpro2keywords_path = _default_local_data_path(
             interpro2keywords_path, C.INTERPRO2KEYWORDS
         )
         self.interpro_ = interpro.InterPro(
-            entries_path=_default_data_path(interpro_entry_path, C.INTERPRO_ENTRY)
+            entries_path=_default_local_data_path(interpro_entry_path, C.INTERPRO_ENTRY)
         )
 
         self.lsh_path = lsh_path
