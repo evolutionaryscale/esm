@@ -414,7 +414,7 @@ def iterative_sampling_tokens(
                 # that of the prompt, which may or may not be padded, depending on
                 # whether the padding was done locally with the open source model
                 # (where per_prompt_cur_sampled is already padded) or by
-                # BatchedForwardRunner (where per_prompt_cur_sampled is not padded).
+                # BatchedESM3ModelRunner (where per_prompt_cur_sampled is not padded).
                 len(per_prompt_cur_sampled),
             )
 

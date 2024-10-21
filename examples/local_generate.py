@@ -11,6 +11,7 @@ from esm.sdk.api import (
     SamplingTrackConfig,
 )
 from esm.utils.structure.protein_chain import ProteinChain
+from esm.utils.structure.protein_complex import ProteinComplex
 from esm.utils.types import FunctionAnnotation
 
 
@@ -22,6 +23,12 @@ def get_sample_protein() -> ESMProtein:
         FunctionAnnotation(label="peptidase", start=100, end=114),
         FunctionAnnotation(label="chymotrypsin", start=190, end=202),
     ]
+    return protein
+
+
+def get_sample_protein_complex() -> ESMProtein:
+    protein = ProteinComplex.from_rcsb("7a3w")
+    protein = ESMProtein.from_protein_complex(protein)
     return protein
 
 
@@ -123,6 +130,21 @@ def main(client: ESM3InferenceClient):
         cot_protein, ESMProtein
     ), f"ESMProtein was expected but got {cot_protein}"
     cot_protein.to_pdb("./sample_cot.pdb")
+
+    # Protein Complex
+    protein = get_sample_protein_complex()
+    sequence_length = len(protein.sequence)  # type: ignore
+    num_steps = 1
+    folded_protein = client.generate(
+        protein,
+        GenerationConfig(
+            track="structure", schedule="cosine", num_steps=num_steps, temperature=0.0
+        ),
+    )
+    assert isinstance(
+        folded_protein, ESMProtein
+    ), f"ESMProtein was expected but got {protein}"
+    folded_protein.to_pdb("./sample_folded_complex.pdb")
 
     # Batch examples.
 

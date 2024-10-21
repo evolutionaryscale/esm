@@ -2,11 +2,13 @@ import math
 import os
 from collections import defaultdict
 from typing import ContextManager, Sequence, TypeVar
+from warnings import warn
 
 import huggingface_hub
 import numpy as np
 import torch
 
+from esm.utils.constants.esm3 import CHAIN_BREAK_STR
 from esm.utils.types import FunctionAnnotation
 
 MAX_SUPPORTED_DISTANCE = 1e6
@@ -297,3 +299,23 @@ def huggingfacehub_login():
     variable, else by prompting the user"""
     token = os.environ.get("HF_TOKEN")
     huggingface_hub.login(token=token)
+
+
+def get_chainbreak_boundaries_from_sequence(sequence: Sequence[str]) -> np.ndarray:
+    chain_boundaries = [0]
+    for i, aa in enumerate(sequence):
+        if aa == CHAIN_BREAK_STR:
+            if i == (len(sequence) - 1):
+                raise ValueError(
+                    "Encountered chain break token at end of sequence, this is unexpected."
+                )
+            if i == (len(sequence) - 2):
+                warn(
+                    "Encountered chain break token at penultimate position, this is unexpected."
+                )
+            chain_boundaries.append(i)
+            chain_boundaries.append(i + 1)
+    chain_boundaries.append(len(sequence))
+    assert len(chain_boundaries) % 2 == 0
+    chain_boundaries = np.array(chain_boundaries).reshape(-1, 2)
+    return chain_boundaries

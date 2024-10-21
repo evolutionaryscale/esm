@@ -261,3 +261,49 @@ def compute_affine_and_rmsd(
     )
 
     return affine, avg_rmsd
+
+
+def compute_gdt_ts_no_alignment(
+    aligned: torch.Tensor,
+    target: torch.Tensor,
+    atom_exists_mask: torch.Tensor,
+    reduction: str = "batch",
+) -> torch.Tensor:
+    """
+    Compute GDT_TS between two batches of structures without alignment.
+
+    Args:
+    - mobile (torch.Tensor): Batch of coordinates of structure to be superimposed in shape (B, N, 3)
+    - target (torch.Tensor): Batch of coordinates of structure that is fixed in shape (B, N, 3)
+    - atom_exists_mask (torch.Tensor): Mask for Whether an atom exists of shape (B, N). noo
+    - reduction (str): One of "batch", "per_sample".
+
+    Returns:
+    If reduction == "batch":
+        (torch.Tensor): 0-dim, GDT_TS between the structures for each batch
+    If reduction == "per_sample":
+        (torch.Tensor): (B,)-dim, GDT_TS between the structures for each sample in the batch
+    """
+    if reduction not in ("per_sample", "batch"):
+        raise ValueError("Unrecognized reduction: '{reduction}'")
+
+    if atom_exists_mask is None:
+        atom_exists_mask = torch.isfinite(target).all(dim=-1)
+
+    deviation = torch.linalg.vector_norm(aligned - target, dim=-1)
+    num_valid_atoms = atom_exists_mask.sum(dim=-1)
+
+    # Compute GDT_TS
+    score = (
+        ((deviation < 1) * atom_exists_mask).sum(dim=-1) / num_valid_atoms
+        + ((deviation < 2) * atom_exists_mask).sum(dim=-1) / num_valid_atoms
+        + ((deviation < 4) * atom_exists_mask).sum(dim=-1) / num_valid_atoms
+        + ((deviation < 8) * atom_exists_mask).sum(dim=-1) / num_valid_atoms
+    ) * 0.25
+
+    if reduction == "batch":
+        return score.mean()
+    elif reduction == "per_sample":
+        return score
+    else:
+        raise ValueError("Unrecognized reduction: '{reduction}'")
