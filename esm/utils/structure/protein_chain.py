@@ -26,7 +26,7 @@ from esm.utils.constants import esm3 as C
 from esm.utils.misc import slice_python_object_as_numpy
 from esm.utils.structure.affine3d import Affine3D
 from esm.utils.structure.aligner import Aligner
-from esm.utils.structure.lddt import compute_lddt_ca
+from esm.utils.structure.metrics import compute_lddt_ca
 from esm.utils.structure.normalize_coordinates import (
     apply_frame_to_coords,
     get_protein_normalization_frame,
@@ -542,7 +542,7 @@ class ProteinChain:
         id: str | None = None,
         is_predicted: bool = False,
     ) -> "ProteinChain":
-        """Return a ProteinStructure object from an pdb file.
+        """Return a ProteinChain object from an pdb file.
 
         Args:
             path (str | Path | io.TextIO): Path or buffer to read pdb file from. Should be uncompressed.
@@ -644,6 +644,7 @@ class ProteinChain:
         pdb_id: str,
         chain_id: str = "detect",
     ):
+        """Fetch a protein chain from the RCSB PDB database."""
         f: io.StringIO = rcsb.fetch(pdb_id, "pdb")  # type: ignore
         return cls.from_pdb(f, chain_id=chain_id, id=pdb_id)
 
@@ -655,7 +656,9 @@ class ProteinChain:
     ) -> "ProteinChain":
         """A simple converter from bs.AtomArray -> ProteinChain.
         Uses PDB file format as intermediate."""
-        pdb_file = bs.io.pdb.PDBFile()  # pyright: ignore
+        atom_array = atom_array.copy()
+        atom_array.box = None  # remove surrounding box, from_pdb won't handle this
+        pdb_file = PDBFile()  # pyright: ignore
         pdb_file.set_structure(atom_array)
 
         buf = io.StringIO()
@@ -784,7 +787,7 @@ class ProteinChain:
         sep_tokens = {
             "residue_index": np.array([-1]),
             "insertion_code": np.array([""]),
-            "atom37_positions": np.full([1, 37, 3], np.inf),
+            "atom37_positions": np.full([1, 37, 3], np.nan),
             "atom37_mask": np.zeros([1, 37]),
             "confidence": np.array([0]),
         }

@@ -14,7 +14,11 @@ from esm.tokenization import (
 )
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
+from esm.utils.misc import (
+    get_chainbreak_boundaries_from_sequence,
+)
 from esm.utils.structure.protein_chain import ProteinChain
+from esm.utils.structure.protein_complex import ProteinComplex
 from esm.utils.types import (
     FunctionAnnotation,
     PathOrBuffer,
@@ -94,9 +98,27 @@ class ESMProtein(ProteinType):
                 coordinates=torch.tensor(protein_chain.atom37_positions),
             )
 
+    @classmethod
+    def from_protein_complex(
+        cls, protein_complex: ProteinComplex, with_annotations: bool = False
+    ) -> ESMProtein:
+        if with_annotations:
+            raise NotImplementedError(
+                "Annotations are not supported for ProteinComplex yet."
+            )
+
+        return ESMProtein(
+            sequence=protein_complex.sequence,
+            secondary_structure=None,
+            sasa=None,
+            function_annotations=None,
+            coordinates=torch.tensor(protein_complex.atom37_positions),
+        )
+
     def to_pdb(self, pdb_path: PathOrBuffer) -> None:
-        protein_chain = self.to_protein_chain().infer_oxygen()
-        protein_chain.to_pdb(pdb_path)
+        # Note: Will work for single chains as well and produce same pdb file
+        protein_complex = self.to_protein_complex().infer_oxygen()
+        protein_complex.to_pdb(pdb_path)
 
     def to_pdb_string(self) -> str:
         protein_chain = self.to_protein_chain()
@@ -118,6 +140,33 @@ class ESMProtein(ProteinType):
             else self.plddt.detach().cpu().numpy(),
         )
         return protein_chain
+
+    def to_protein_complex(
+        self, copy_annotations_from_ground_truth: ProteinComplex | None = None
+    ) -> ProteinComplex:
+        assert (
+            self.sequence is not None
+        ), "ESMProtein must have a sequence to convert to ProteinComplex"
+        assert (
+            self.coordinates is not None
+        ), "ESMProtein must have coordinates to convert to ProteinComplex"
+        coords = self.coordinates.to("cpu").numpy()
+
+        chain_boundaries = get_chainbreak_boundaries_from_sequence(self.sequence)
+        if copy_annotations_from_ground_truth is not None:
+            gt_chains = list(copy_annotations_from_ground_truth.chain_iter())
+        else:
+            gt_chains = None
+        pred_chains = []
+        for i, (start, end) in enumerate(chain_boundaries):
+            pred_chain = ProteinChain.from_atom37(
+                atom37_positions=coords[start:end],
+                sequence=self.sequence[start:end],
+                chain_id=gt_chains[i].chain_id if gt_chains is not None else None,
+                entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
+            )
+            pred_chains.append(pred_chain)
+        return ProteinComplex.from_chains(pred_chains)
 
 
 @define
