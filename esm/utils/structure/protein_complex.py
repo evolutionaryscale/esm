@@ -251,8 +251,6 @@ class ProteinComplex:
             if len(chain) == 0:
                 continue
             chains.append(ProteinChain.from_atomarray(chain, id))
-            print("IS INF")
-            print(np.isinf(chains[-1].atom37_positions).any())
         return ProteinComplex.from_chains(chains)
 
     @classmethod

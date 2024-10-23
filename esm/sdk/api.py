@@ -269,6 +269,14 @@ class GenerationConfig:
     condition_on_coordinates_only: bool = True
 
 
+@define
+class InverseFoldingConfig:
+    invalid_ids: Sequence[int] = []
+    schedule: str = "cosine"
+    num_steps: int = 1
+    temperature: float = 1.0
+
+
 ## Low Level Endpoint Types
 @define
 class SamplingTrackConfig:

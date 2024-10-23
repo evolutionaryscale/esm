@@ -52,3 +52,5 @@ python examples/raw_forwards.py
 `examples/esmprotein.ipynb` works. Remember to skip running the first cell - it will reinstall stock esm instead of your deployed version.
 
 3. Ensure `examples/generate.ipynb` works. Note this notebook will require a node with a GPU that can fit ESM3 small open.
+
+4. Ensure

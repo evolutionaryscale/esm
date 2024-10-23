@@ -42,13 +42,80 @@ def retry_if_specific_error(exception):
     We only retry on specific errors.
     Currently we retry for 502 (bad gateway) and 429 (rate limit)
     """
-    return isinstance(exception, ESMProteinError) and exception.error_code in {429, 502}
+    return isinstance(exception, ESMProteinError) and exception.error_code in {
+        429,
+        502,
+        504,
+    }
 
 
 def log_retry_attempt(retry_state):
     print(
         f"Retrying... Attempt {retry_state.attempt_number} after {retry_state.next_action.sleep}s due to: {retry_state.outcome.result()}"
     )
+
+
+class FoldForgeInferenceClient:
+    def __init__(
+        self,
+        url: str = "https://forge.evolutionaryscale.ai",
+        token: str = "",
+        request_timeout: int | None = None,
+    ):
+        if token == "":
+            raise RuntimeError(
+                "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
+            )
+        self.url = url
+        self.token = token
+        self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.request_timeout = request_timeout
+
+    def fold(
+        self,
+        model_name: str,
+        sequence: str,
+        potential_sequence_of_concern: bool,
+    ) -> torch.Tensor | ESMProteinError:
+        request = {
+            "model": model_name,
+            "sequence": sequence,
+        }
+        try:
+            data = self._post(
+                "fold",
+                request,
+                potential_sequence_of_concern,
+            )
+        except ESMProteinError as e:
+            return e
+
+        return data["coordinates"]
+
+    def _post(self, endpoint, request, potential_sequence_of_concern):
+        request["potential_sequence_of_concern"] = potential_sequence_of_concern
+
+        model_name_url = request["model"] if request["model"] != "esm3" else "api"
+        response = requests.post(
+            urljoin(self.url, f"/{model_name_url}/v1/{endpoint}"),
+            json=request,
+            headers=self.headers,
+            timeout=self.request_timeout,
+        )
+
+        if not response.ok:
+            raise ESMProteinError(
+                error_code=response.status_code,
+                error_msg=f"Failure in {endpoint}: {response.text}",
+            )
+
+        data = response.json()
+        # Nextjs puts outputs dict under "data" key.
+        # Lift it up for easier downstream processing.
+        if "outputs" not in data and "data" in data:
+            data = data["data"]
+
+        return data
 
 
 class ESM3ForgeInferenceClient(ESM3InferenceClient):
