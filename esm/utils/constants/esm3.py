@@ -112,9 +112,7 @@ INTERPRO_HIERARCHY = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
 INTERPRO2GO = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
 INTERPRO_2ID = "data/tag_dict_4_safety_filtered.json"
 
-LSH_TABLE_PATHS = {
-    "8bit": "data/hyperplanes_8bit_58641.npz",
-}
+LSH_TABLE_PATHS = {"8bit": "data/hyperplanes_8bit_58641.npz"}
 
 KEYWORDS_VOCABULARY = (
     IN_REPO_DATA_FOLDER / "keyword_vocabulary_safety_filtered_58641.txt"

@@ -167,8 +167,7 @@ class FunctionTokenDecoder(nn.Module):
             # Apply depth-position offset to use distinct vocabs. See __init__ for
             # explaination.
             vocab_offsets = self.config.function_token_vocab_size * torch.arange(
-                self.config.function_token_depth,
-                device=token_ids.device,
+                self.config.function_token_depth, device=token_ids.device
             )
             inputs = token_ids + vocab_offsets[None, :]
 
@@ -251,8 +250,7 @@ class FunctionTokenDecoder(nn.Module):
                 annotations.append(annotation)
 
             annotations = merge_annotations(
-                annotations,
-                merge_gap_max=annotation_gap_merge_max,
+                annotations, merge_gap_max=annotation_gap_merge_max
             )
 
             # Drop very small annotations.

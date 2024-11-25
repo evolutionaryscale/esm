@@ -12,15 +12,12 @@ from esm.utils.misc import fp32_autocast_context
 @T.runtime_checkable
 class Rotation(T.Protocol):
     @classmethod
-    def identity(cls, shape: tuple[int, ...], **tensor_kwargs) -> Self:
-        ...
+    def identity(cls, shape: tuple[int, ...], **tensor_kwargs) -> Self: ...
 
     @classmethod
-    def random(cls, shape: tuple[int, ...], **tensor_kwargs) -> Self:
-        ...
+    def random(cls, shape: tuple[int, ...], **tensor_kwargs) -> Self: ...
 
-    def __getitem__(self, idx: T.Any) -> Self:
-        ...
+    def __getitem__(self, idx: T.Any) -> Self: ...
 
     @property
     def tensor(self) -> torch.Tensor:
@@ -35,8 +32,7 @@ class Rotation(T.Protocol):
         # This means that 1x4 quaternions are treated as size (1,) for example
         ...
 
-    def as_matrix(self) -> RotationMatrix:
-        ...
+    def as_matrix(self) -> RotationMatrix: ...
 
     def compose(self, other: Self) -> Self:
         # To be safe, we force users to explicitly convert between rotation types.
@@ -50,8 +46,7 @@ class Rotation(T.Protocol):
         # rotates points by this rotation object
         ...
 
-    def invert(self) -> Self:
-        ...
+    def invert(self) -> Self: ...
 
     @property
     def dtype(self) -> torch.dtype:
@@ -194,10 +189,7 @@ class Affine3D:
 
     def __getitem__(self, idx: T.Any) -> "Affine3D":
         indices = (idx,) if isinstance(idx, int) or idx is None else tuple(idx)
-        return Affine3D(
-            trans=self.trans[indices + (slice(None),)],
-            rot=self.rot[idx],
-        )
+        return Affine3D(trans=self.trans[indices + (slice(None),)], rot=self.rot[idx])
 
     @property
     def shape(self) -> torch.Size:

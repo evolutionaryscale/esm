@@ -97,9 +97,7 @@ def tokenize_structure(
     # Add space for BOS and EOS tokens
     if add_special_tokens:
         coordinates = F.pad(
-            coordinates,
-            (0, 0, 0, 0, left_pad, right_pad),
-            value=torch.inf,
+            coordinates, (0, 0, 0, 0, left_pad, right_pad), value=torch.inf
         )
         plddt = F.pad(plddt, (left_pad, right_pad), value=0)
         structure_tokens = F.pad(
@@ -171,8 +169,7 @@ def tokenize_function_annotations(
 
 # Tokenized Defaults
 def get_default_sequence_tokens(
-    sequence_length: int,
-    sequence_tokenizer: EsmSequenceTokenizer,
+    sequence_length: int, sequence_tokenizer: EsmSequenceTokenizer
 ) -> torch.Tensor:
     assert sequence_tokenizer.mask_token_id is not None
     assert sequence_tokenizer.bos_token_id is not None
@@ -191,10 +188,7 @@ def get_default_structure_tokens(
     sequence_length: int, structure_tokenizer: StructureTokenizer
 ) -> torch.Tensor:
     structure_tokens = (
-        torch.ones(
-            (sequence_length + 2,),
-            dtype=torch.int64,
-        )
+        torch.ones((sequence_length + 2,), dtype=torch.int64)
         * structure_tokenizer.mask_token_id
     )
     # Always include BOS and EOS tokens
@@ -241,10 +235,7 @@ def get_default_residue_annotation_tokens(
     sequence_length: int, residue_annotation_tokenizer: ResidueAnnotationsTokenizer
 ) -> torch.Tensor:
     residue_annotation_tokens = (
-        torch.ones(
-            (sequence_length + 2, C.MAX_RESIDUE_ANNOTATIONS),
-            dtype=torch.int64,
-        )
+        torch.ones((sequence_length + 2, C.MAX_RESIDUE_ANNOTATIONS), dtype=torch.int64)
         * residue_annotation_tokenizer.pad_token_id
     )
     # Always include BOS and EOS tokens

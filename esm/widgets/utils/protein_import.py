@@ -9,11 +9,7 @@ from esm.widgets.utils.printing import wrapped_print
 
 
 class ProteinImporter:
-    def __init__(
-        self,
-        max_proteins: int | None = None,
-        autoload: bool = False,
-    ) -> None:
+    def __init__(self, max_proteins: int | None = None, autoload: bool = False) -> None:
         self._protein_list: list[tuple[str, ProteinChain]] = []
         self._protein_workspace: dict[str, str] = {}
         self.max_proteins = max_proteins

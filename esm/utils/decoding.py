@@ -1,4 +1,5 @@
 import warnings
+from typing import cast
 
 import attr
 import torch
@@ -31,7 +32,7 @@ from esm.utils.function.encode_decode import (
     decode_function_tokens,
     decode_residue_annotation_tokens,
 )
-from esm.utils.misc import list_nan_to_none
+from esm.utils.misc import maybe_list
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import FunctionAnnotation
 
@@ -130,15 +131,10 @@ def _bos_eos_warn(msg: str, tensor: torch.Tensor, tok: EsmTokenizerBase):
 
 
 def decode_sequence(
-    sequence_tokens: torch.Tensor,
-    sequence_tokenizer: EsmSequenceTokenizer,
-    **kwargs,
+    sequence_tokens: torch.Tensor, sequence_tokenizer: EsmSequenceTokenizer, **kwargs
 ) -> str:
     _bos_eos_warn("Sequence", sequence_tokens, sequence_tokenizer)
-    sequence = sequence_tokenizer.decode(
-        sequence_tokens,
-        **kwargs,
-    )
+    sequence = sequence_tokenizer.decode(sequence_tokens, **kwargs)
     sequence = sequence.replace(" ", "")
     sequence = sequence.replace(sequence_tokenizer.mask_token, C.MASK_STR_SHORT)
     sequence = sequence.replace(sequence_tokenizer.cls_token, "")
@@ -185,20 +181,16 @@ def decode_structure(
 
 
 def decode_secondary_structure(
-    secondary_structure_tokens: torch.Tensor,
-    ss_tokenizer: SecondaryStructureTokenizer,
+    secondary_structure_tokens: torch.Tensor, ss_tokenizer: SecondaryStructureTokenizer
 ) -> str:
     _bos_eos_warn("Secondary structure", secondary_structure_tokens, ss_tokenizer)
     secondary_structure_tokens = secondary_structure_tokens[1:-1]
-    secondary_structure = ss_tokenizer.decode(
-        secondary_structure_tokens,
-    )
+    secondary_structure = ss_tokenizer.decode(secondary_structure_tokens)
     return secondary_structure
 
 
 def decode_sasa(
-    sasa_tokens: torch.Tensor,
-    sasa_tokenizer: SASADiscretizingTokenizer,
+    sasa_tokens: torch.Tensor, sasa_tokenizer: SASADiscretizingTokenizer
 ) -> list[float]:
     if sasa_tokens[0] != 0:
         raise ValueError("SASA does not start with 0 corresponding to BOS token")
@@ -213,12 +205,13 @@ def decode_sasa(
         torch.long,
     ]:
         # Decode if int
+        # handles turning NaN's into None's
         sasa = sasa_tokenizer.decode_float(sasa_tokens)
     else:
         # If already float, just convert to list
-        sasa = sasa_tokens.tolist()
+        sasa = cast(list[float], maybe_list(sasa_tokens, convert_nan_to_none=True))
 
-    return list_nan_to_none(sasa)
+    return sasa
 
 
 def decode_function_annotations(

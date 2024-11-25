@@ -10,9 +10,7 @@ from esm.widgets.components.results_visualizer import (
     create_results_visualizer,
 )
 from esm.widgets.utils.printing import wrapped_print
-from esm.widgets.utils.protein_import import (
-    ProteinImporter,
-)
+from esm.widgets.utils.protein_import import ProteinImporter
 
 
 def create_inverse_folding_ui(client: ESM3InferenceClient) -> widgets.Widget:

@@ -87,10 +87,7 @@ class PairwisePredictionHead(nn.Module):
 
         prod = q[:, None, :, :] * k[:, :, None, :]
         diff = q[:, None, :, :] - k[:, :, None, :]
-        x_2d = [
-            prod,
-            diff,
-        ]
+        x_2d = [prod, diff]
         if pairwise is not None:
             x_2d.append(pairwise)
         x = torch.cat(x_2d, dim=-1)
@@ -289,11 +286,7 @@ class StructureTokenEncoder(nn.Module):
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=False):  # type: ignore
             ca = coords[..., 1, :]
             edges, edge_mask = knn_graph(
-                ca,
-                coord_mask,
-                padding_mask,
-                sequence_id,
-                no_knn=knn,
+                ca, coord_mask, padding_mask, sequence_id, no_knn=knn
             )
 
         return edges, edge_mask
@@ -333,12 +326,7 @@ class StructureTokenEncoder(nn.Module):
 
 
 class StructureTokenDecoder(nn.Module):
-    def __init__(
-        self,
-        d_model,
-        n_heads,
-        n_layers,
-    ):
+    def __init__(self, d_model, n_heads, n_layers):
         super().__init__()
         self.decoder_channels = d_model
 

@@ -254,10 +254,7 @@ class ProteinComplex:
         return ProteinComplex.from_chains(chains)
 
     @classmethod
-    def from_rcsb(
-        cls,
-        pdb_id: str,
-    ):
+    def from_rcsb(cls, pdb_id: str):
         """Fetch a protein complex from the RCSB PDB database."""
         f: io.StringIO = rcsb.fetch(pdb_id, "pdb")  # type: ignore
         return cls.from_pdb(f, id=pdb_id)
@@ -345,10 +342,7 @@ class ProteinComplex:
         )
 
     @classmethod
-    def from_chains(
-        cls,
-        chains: Sequence[ProteinChain],
-    ):
+    def from_chains(cls, chains: Sequence[ProteinChain]):
         if not chains:
             raise ValueError(
                 "Cannot create a ProteinComplex from an empty list of chains"

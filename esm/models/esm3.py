@@ -29,9 +29,7 @@ from esm.sdk.api import (
     ProteinType,
     SamplingConfig,
 )
-from esm.tokenization import (
-    TokenizerCollectionProtocol,
-)
+from esm.tokenization import TokenizerCollectionProtocol
 from esm.utils import encoding
 from esm.utils.constants import esm3 as C
 from esm.utils.constants.models import (
@@ -173,11 +171,7 @@ class OutputHeads(nn.Module):
         secondary_structure_logits = self.ss8_head(x)
         sasa_logits = self.sasa_head(x)
         function_logits = self.function_head(x)
-        function_logits = einops.rearrange(
-            function_logits,
-            "... (k v) -> ... k v",
-            k=8,
-        )
+        function_logits = einops.rearrange(function_logits, "... (k v) -> ... k v", k=8)
 
         residue_logits = self.residue_head(x)
 
@@ -217,11 +211,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
         super().__init__()
         self.encoder = EncodeInputs(d_model)
         self.transformer = TransformerStack(
-            d_model,
-            n_heads,
-            v_heads,
-            n_layers,
-            mask_and_zero_frameless=True,
+            d_model, n_heads, v_heads, n_layers, mask_and_zero_frameless=True
         )
         self.output_heads = OutputHeads(d_model)
 
@@ -237,9 +227,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name: str = ESM3_OPEN_SMALL,
-        device: torch.device | None = None,
+        cls, model_name: str = ESM3_OPEN_SMALL, device: torch.device | None = None
     ) -> ESM3:
         from esm.pretrained import load_local_model
 
@@ -489,15 +477,14 @@ class ESM3(nn.Module, ESM3InferenceClient):
                 reference_sequence = encoding.get_default_sequence(sequence_length - 2)
             else:
                 reference_sequence = input.sequence
-            (
-                function_tokens,
-                residue_annotation_tokens,
-            ) = encoding.tokenize_function_annotations(
-                input.function_annotations,
-                reference_sequence=reference_sequence,
-                function_tokenizer=self.tokenizers.function,
-                residue_annotation_tokenizer=self.tokenizers.residue_annotations,
-                add_special_tokens=True,
+            (function_tokens, residue_annotation_tokens) = (
+                encoding.tokenize_function_annotations(
+                    input.function_annotations,
+                    reference_sequence=reference_sequence,
+                    function_tokenizer=self.tokenizers.function,
+                    residue_annotation_tokenizer=self.tokenizers.residue_annotations,
+                    add_special_tokens=True,
+                )
             )
 
         return ESMProteinTensor(
@@ -510,10 +497,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
             coordinates=coordinates,
         ).to(next(self.parameters()).device)
 
-    def decode(
-        self,
-        input: ESMProteinTensor,
-    ) -> ESMProtein:
+    def decode(self, input: ESMProteinTensor) -> ESMProtein:
         return decode_protein_tensor(
             input=input,
             tokenizers=self.tokenizers,
@@ -613,10 +597,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
 
         logits_output: LogitsOutput = _batch_forward(self, batched_protein)
         forward_and_sample_out: ForwardAndSampleOutput = _sample_per_prompt(
-            batched_protein,
-            logits_output,
-            sampling_config,
-            self.tokenizers,
+            batched_protein, logits_output, sampling_config, self.tokenizers
         )
 
         # There is only 1 prompt to sample for.

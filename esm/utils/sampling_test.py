@@ -31,9 +31,7 @@ def test_sample_logits():
 
     with pytest.raises(ValueError):
         sampled = sample_logits(
-            logits=torch.randn((8, 4096)),
-            temperature=0.0,
-            valid_ids=[],
+            logits=torch.randn((8, 4096)), temperature=0.0, valid_ids=[]
         )
 
 

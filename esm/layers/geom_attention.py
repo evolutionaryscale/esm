@@ -78,11 +78,7 @@ class GeometricReasoningOriginalImpl(nn.Module):
             affine.rot[..., None]
             .apply(rearrange(vec_rot, "... (h c) -> ... h c", c=3))
             .split(
-                [
-                    self.v_heads,
-                    self.v_heads,
-                    self.v_heads * self.num_vector_messages,
-                ],
+                [self.v_heads, self.v_heads, self.v_heads * self.num_vector_messages],
                 dim=-2,
             )
         )

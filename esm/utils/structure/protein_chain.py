@@ -229,8 +229,7 @@ class ProteinChain:
         return buf.getvalue()
 
     def to_structure_encoder_inputs(
-        self,
-        should_normalize_coordinates: bool = True,
+        self, should_normalize_coordinates: bool = True
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         coords = torch.tensor(self.atom37_positions, dtype=torch.float32)
         plddt = torch.tensor(self.confidence, dtype=torch.float32)
@@ -494,9 +493,7 @@ class ProteinChain:
 
     @classmethod
     def from_backbone_atom_coordinates(
-        cls,
-        backbone_atom_coordinates: np.ndarray | torch.Tensor,
-        **kwargs,
+        cls, backbone_atom_coordinates: np.ndarray | torch.Tensor, **kwargs
     ):
         """Create a ProteinChain from a set of backbone atom coordinates.
 
@@ -529,10 +526,7 @@ class ProteinChain:
         )
         atom37_positions[:, :3, :] = backbone_atom_coordinates
 
-        return cls.from_atom37(
-            atom37_positions=atom37_positions,
-            **kwargs,
-        )
+        return cls.from_atom37(atom37_positions=atom37_positions, **kwargs)
 
     @classmethod
     def from_pdb(
@@ -586,22 +580,13 @@ class ProteinChain:
         num_res = len(sequence)
 
         atom_positions = np.full(
-            [num_res, RC.atom_type_num, 3],
-            np.nan,
-            dtype=np.float32,
+            [num_res, RC.atom_type_num, 3], np.nan, dtype=np.float32
         )
-        atom_mask = np.full(
-            [num_res, RC.atom_type_num],
-            False,
-            dtype=bool,
-        )
+        atom_mask = np.full([num_res, RC.atom_type_num], False, dtype=bool)
         residue_index = np.full([num_res], -1, dtype=np.int64)
         insertion_code = np.full([num_res], "", dtype="<U4")
 
-        confidence = np.ones(
-            [num_res],
-            dtype=np.float32,
-        )
+        confidence = np.ones([num_res], dtype=np.float32)
 
         for i, res in enumerate(bs.residue_iter(atom_array)):
             chain = atom_array[atom_array.chain_id == chain_id]
@@ -639,20 +624,14 @@ class ProteinChain:
         )
 
     @classmethod
-    def from_rcsb(
-        cls,
-        pdb_id: str,
-        chain_id: str = "detect",
-    ):
+    def from_rcsb(cls, pdb_id: str, chain_id: str = "detect"):
         """Fetch a protein chain from the RCSB PDB database."""
         f: io.StringIO = rcsb.fetch(pdb_id, "pdb")  # type: ignore
         return cls.from_pdb(f, chain_id=chain_id, id=pdb_id)
 
     @classmethod
     def from_atomarray(
-        cls,
-        atom_array: bs.AtomArray,
-        id: str | None = None,
+        cls, atom_array: bs.AtomArray, id: str | None = None
     ) -> "ProteinChain":
         """A simple converter from bs.AtomArray -> ProteinChain.
         Uses PDB file format as intermediate."""

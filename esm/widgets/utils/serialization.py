@@ -55,9 +55,7 @@ def create_download_results_button(
     )
 
 
-def serialize_protein(
-    protein: ESMProtein,
-) -> str:
+def serialize_protein(protein: ESMProtein) -> str:
     protein_dict = {
         "sequence": protein.sequence,
         "coordinates": protein.coordinates.tolist()

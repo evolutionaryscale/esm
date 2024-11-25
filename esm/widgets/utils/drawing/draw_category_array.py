@@ -110,8 +110,7 @@ def draw_data_array(
             else:
                 legend_patches = [
                     patches.Patch(
-                        color=rgb_colors[category_to_index[category]],
-                        label=category,
+                        color=rgb_colors[category_to_index[category]], label=category
                     )
                     for category in categories
                 ]

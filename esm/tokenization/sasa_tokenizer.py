@@ -31,7 +31,7 @@ class SASADiscretizingTokenizer(EsmTokenizerBase):
         return self.special_tokens + range_tokens
 
     @cached_property
-    def midpoints(self) -> list[float]:
+    def midpoints_tensor(self) -> torch.Tensor:
         """Midpoints of the SASA token ranges."""
         boundaries = [0] + self._boundaries + [self._boundaries[-1] * 2]
         midpoint_tokens = [
@@ -39,7 +39,11 @@ class SASADiscretizingTokenizer(EsmTokenizerBase):
             for low, high in zip(boundaries[:-1], boundaries[1:])
         ]
         midpoint_tokens = [float("nan"), float("nan"), float("nan")] + midpoint_tokens
-        return midpoint_tokens
+        return torch.Tensor(midpoint_tokens)
+
+    def midpoints(self) -> list[float]:
+        """Midpoints of the SASA token ranges."""
+        return self.midpoints_tensor.tolist()
 
     @cached_property
     def vocab_to_index(self) -> dict[str, int]:
@@ -86,7 +90,11 @@ class SASADiscretizingTokenizer(EsmTokenizerBase):
 
     def decode_float(self, encoded: torch.Tensor) -> list[float]:
         """Decodes SASA token ids into float values."""
-        return [self.midpoints[token_id] for token_id in encoded]
+        decoded = self.midpoints_tensor[encoded.cpu()]
+        nan_mask = torch.isnan(decoded)
+        np_arr = decoded.numpy()
+        np_arr[nan_mask.numpy()] = None
+        return np_arr.tolist()
 
     def decode(self, encoded: torch.Tensor) -> str:
         """Decodes SASA token ids."""

@@ -12,9 +12,7 @@ from esm.widgets.components.sequence_prompt_selector import (
 from esm.widgets.components.structure_prompt_selector import (
     create_structure_prompt_selector,
 )
-from esm.widgets.utils.prompting import (
-    PromptManagerCollection,
-)
+from esm.widgets.utils.prompting import PromptManagerCollection
 from esm.widgets.utils.protein_import import ProteinImporter
 
 

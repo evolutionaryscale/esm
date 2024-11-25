@@ -17,8 +17,7 @@ class Alignable(Protocol):
     # Trick to detect whether an object is a dataclass
     __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
 
-    def __len__(self) -> int:
-        ...
+    def __len__(self) -> int: ...
 
 
 T = TypeVar("T", bound=Alignable)

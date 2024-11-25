@@ -120,8 +120,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
     def _tfidf(self) -> tfidf.TFIDFModel:
         """Creates TF-IDF model for encoding function keywords."""
         return tfidf.TFIDFModel(
-            vocabulary_path=self.keyword_vocabulary_path,
-            idf_path=self.keyword_idf_path,
+            vocabulary_path=self.keyword_vocabulary_path, idf_path=self.keyword_idf_path
         )
 
     @cached_property
@@ -205,9 +204,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
         return tokens
 
     def _function_text_hash(
-        self,
-        labels: Collection[str],
-        keyword_mask: np.ndarray | None = None,
+        self, labels: Collection[str], keyword_mask: np.ndarray | None = None
     ) -> np.ndarray | None:
         """Applies a locality sensitive hash (LSH) to function text.
 
@@ -295,9 +292,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
             raise ValueError(f"Unknown token: {token}")
 
     def batch_encode(
-        self,
-        token_batch: list[list[str]],
-        add_special_tokens: bool = True,
+        self, token_batch: list[list[str]], add_special_tokens: bool = True
     ) -> torch.Tensor:
         """Encodes batch of function tokens.
 
@@ -312,8 +307,7 @@ class InterProQuantizedTokenizer(EsmTokenizerBase):
             for tokens in token_batch
         ]
         return stack_variable_length_tensors(
-            encoded,
-            constant_value=self.vocab_to_index["<pad>"],
+            encoded, constant_value=self.vocab_to_index["<pad>"]
         )
 
     def decode(self, encoded: torch.Tensor):

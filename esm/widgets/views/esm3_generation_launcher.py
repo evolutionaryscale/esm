@@ -125,9 +125,7 @@ def create_esm3_generation_launcher(
         ]
     )
 
-    generation_config_ui = widgets.VBox(
-        [generation_config_settings_ui],
-    )
+    generation_config_ui = widgets.VBox([generation_config_settings_ui])
 
     def on_track_change(change):
         if change["new"] == "function":

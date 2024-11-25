@@ -22,16 +22,30 @@ from esm.utils.constants.esm3 import (
     SASA_DISCRETIZATION_BOUNDARIES,
 )
 
-# Number of dimensions for each protein tensor field without the batch dimension.
-_DIMS: dict[str, int] = {
-    "sequence": 1,
-    "structure": 1,
-    "secondary_structure": 1,
-    "sasa": 1,
-    "function": 2,
-    "residue_annotations": 2,
-    "coordinates": 3,
-}
+
+def _non_batched_dims(k: str, v: torch.Tensor):
+    match k:
+        case "sequence":
+            return 1
+        case "structure":
+            if v.is_floating_point():
+                # This is the one hot soft structure token.
+                return 2
+            else:
+                # This is the normal int structure token.
+                return 1
+        case "secondary_structure":
+            return 1
+        case "sasa":
+            return 1
+        case "function":
+            return 2
+        case "residue_annotations":
+            return 2
+        case "coordinates":
+            return 3
+        case _:
+            raise ValueError(f"Unknown dim for track {k}")
 
 
 class _BatchedESMProteinTensor(ESMProteinTensor):
@@ -52,7 +66,7 @@ class _BatchedESMProteinTensor(ESMProteinTensor):
 
     def __len__(self) -> int:
         def get_len(k, v) -> int:
-            assert len(v.shape) == _DIMS[k] + 1
+            assert len(v.shape) == _non_batched_dims(k, v) + 1
             return v.size(1)
 
         l = self._detect_attribute(get_len, "length")
@@ -61,18 +75,14 @@ class _BatchedESMProteinTensor(ESMProteinTensor):
     @property
     def batch_size(self) -> int:
         def get_batch_size(k, v) -> int:
-            assert len(v.shape) == _DIMS[k] + 1
+            assert len(v.shape) == _non_batched_dims(k, v) + 1
             return v.size(0)
 
         d = self._detect_attribute(get_batch_size, "batch size")
         assert d is not None
         return d
 
-    def slice(
-        self,
-        i: int,
-        sequence_len: int | None = None,
-    ) -> ESMProteinTensor:
+    def slice(self, i: int, sequence_len: int | None = None) -> ESMProteinTensor:
         def _maybe_slice(x: torch.Tensor | None):
             if x is None:
                 return None
@@ -130,8 +140,7 @@ def get_default_sampling_config(
 
 
 def validate_sampling_config(
-    sampling_config: SamplingConfig,
-    on_invalid: Literal["raise", "warn"] = "warn",
+    sampling_config: SamplingConfig, on_invalid: Literal["raise", "warn"] = "warn"
 ):
     # Check that all tracks have topk_logprobs less or equal to MAX_TOP_K
     for track in attr.fields(SamplingConfig):
@@ -288,10 +297,7 @@ def sample_sasa_logits(
     return sasa_value
 
 
-def top_p_logits(
-    logits: torch.Tensor,
-    top_p: float | torch.Tensor,
-) -> torch.Tensor:
+def top_p_logits(logits: torch.Tensor, top_p: float | torch.Tensor) -> torch.Tensor:
     top_p = _tensorize_like(top_p, logits)
 
     batch_dims = logits.size()[:-1]
@@ -320,9 +326,7 @@ def _tensorize_like(value: int | float | torch.Tensor, logits: torch.Tensor):
 
 
 def get_sampling_mask(
-    tokens: torch.Tensor,
-    sampling_track_config: SamplingTrackConfig,
-    mask_idx: int,
+    tokens: torch.Tensor, sampling_track_config: SamplingTrackConfig, mask_idx: int
 ):
     # Do not sample at BOS and EOS tokens
     sampling_mask = torch.ones_like(tokens, dtype=torch.bool)  # (B, L, )

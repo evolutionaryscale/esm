@@ -133,10 +133,7 @@ def create_login_ui(client_container: ClientInitContainer):
                 start_msg_output,
             ]
         elif change["new"] == "Local":
-            model_selection_ui.children = [
-                model_selection_header,
-                local_model,
-            ]
+            model_selection_ui.children = [model_selection_header, local_model]
             login_ui.children = [
                 infobox,
                 selection_ui,

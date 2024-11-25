@@ -112,10 +112,9 @@ def create_structure_prompt_selector(
             ).items():
                 selected_ranges = tuple(selected_ranges)  # Convert to hashable
                 if selected_ranges in contact_map_selection_cache:
-                    (
-                        (x_start, x_end),
-                        (y_start, y_end),
-                    ) = contact_map_selection_cache[selected_ranges]
+                    ((x_start, x_end), (y_start, y_end)) = contact_map_selection_cache[
+                        selected_ranges
+                    ]
                     rect = Rectangle(
                         (x_start - 0.5, max_y - y_end - 1.5),
                         x_end - x_start + 1,

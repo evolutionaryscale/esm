@@ -19,8 +19,7 @@ def draw_protein_structure(
 
         for start, end, color in highlighted_ranges:
             view.setStyle(
-                {"resi": str(start) + "-" + str(end)},
-                {"cartoon": {"color": color}},
+                {"resi": str(start) + "-" + str(end)}, {"cartoon": {"color": color}}
             )
 
         view.zoomTo()
