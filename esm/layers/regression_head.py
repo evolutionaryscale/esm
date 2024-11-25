@@ -2,9 +2,7 @@ import torch.nn as nn
 
 
 def RegressionHead(
-    d_model: int,
-    output_dim: int,
-    hidden_dim: int | None = None,
+    d_model: int, output_dim: int, hidden_dim: int | None = None
 ) -> nn.Module:
     """Single-hidden layer MLP for supervised output.
 

@@ -124,9 +124,9 @@ def create_sequence_prompt_selector(
                     r, g, b, a = hex_to_rgba_tuple(combined_color)
                     a = 0.5  # Set alpha to 0.5
                     combined_color = rgba_tuple_to_rgba_html_string((r, g, b, a))
-                    highlighted_line[
-                        i
-                    ] = f'<span style="background-color:{combined_color}">{highlighted_line[i]}</span>'
+                    highlighted_line[i] = (
+                        f'<span style="background-color:{combined_color}">{highlighted_line[i]}</span>'
+                    )
             highlighted_lines.append("".join(highlighted_line))
 
         return "<br>".join(highlighted_lines)

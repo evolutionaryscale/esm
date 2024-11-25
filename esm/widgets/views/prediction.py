@@ -10,9 +10,7 @@ from esm.widgets.components.results_visualizer import (
     create_results_visualizer,
 )
 from esm.widgets.utils.printing import wrapped_print
-from esm.widgets.utils.protein_import import (
-    ProteinImporter,
-)
+from esm.widgets.utils.protein_import import ProteinImporter
 
 
 def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
@@ -85,11 +83,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         try:
             # Reset the output and results
             output.clear_output()
-            prediction_ui.children = [
-                input_ui,
-                predict_button,
-                output,
-            ]
+            prediction_ui.children = [input_ui, predict_button, output]
             # Predict the protein's properties
             with output:
                 protein = get_protein()
@@ -159,19 +153,10 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
                 wrapped_print(e)
 
     predict_button.on_click(on_click_predict)
-    protein_importer.entries_box.observe(
-        on_new_protein,
-        names="children",
-    )
+    protein_importer.entries_box.observe(on_new_protein, names="children")
     protein_importer.register_delete_callback(lambda: validate_predict(None))
 
-    sequence_input_ui.children[1].observe(
-        on_new_sequence,
-        names="value",
-    )
-    input_ui.observe(
-        validate_predict,
-        names="selected_index",
-    )
+    sequence_input_ui.children[1].observe(on_new_sequence, names="value")
+    input_ui.observe(validate_predict, names="selected_index")
 
     return prediction_ui

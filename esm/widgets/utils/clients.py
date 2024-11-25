@@ -24,7 +24,5 @@ def get_forge_client(model_name: str) -> ESM3InferenceClient:
             "Forge API key not found. Please set the ESM_API_KEY environment variable."
         )
     return ESM3ForgeInferenceClient(
-        model=model_name,
-        url="https://forge.evolutionaryscale.ai",
-        token=forge_token,
+        model=model_name, url="https://forge.evolutionaryscale.ai", token=forge_token
     )

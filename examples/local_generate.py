@@ -1,3 +1,5 @@
+import torch
+
 from esm.models.esm3 import ESM3
 from esm.sdk.api import (
     ESM3InferenceClient,
@@ -38,8 +40,7 @@ def main(client: ESM3InferenceClient):
     protein.function_annotations = None
     protein = client.encode(protein)
     single_step_protein = client.forward_and_sample(
-        protein,
-        SamplingConfig(structure=SamplingTrackConfig(topk_logprobs=2)),
+        protein, SamplingConfig(structure=SamplingTrackConfig(topk_logprobs=2))
     )
     single_step_protein.protein_tensor.sequence = protein.sequence
     single_step_protein = client.decode(single_step_protein.protein_tensor)
@@ -52,8 +53,7 @@ def main(client: ESM3InferenceClient):
     )
     protein = ESMProtein(sequence=prompt)
     protein = client.generate(
-        protein,
-        GenerationConfig(track="sequence", num_steps=8, temperature=0.7),
+        protein, GenerationConfig(track="sequence", num_steps=8, temperature=0.7)
     )
     assert isinstance(protein, ESMProtein), f"ESMProtein was expected but got {protein}"
 
@@ -187,6 +187,7 @@ def main(client: ESM3InferenceClient):
 
         else:
             assert isinstance(p, ESMProtein), f"ESMProtein was expected but got {p}"
+
 
 
 if __name__ == "__main__":

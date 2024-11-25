@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Sequence
+from typing import List, Sequence
 
 import attr
 import torch
@@ -19,14 +19,10 @@ from esm.utils.misc import (
 )
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.structure.protein_complex import ProteinComplex
-from esm.utils.types import (
-    FunctionAnnotation,
-    PathOrBuffer,
-)
+from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
-class ProteinType(ABC):
-    ...
+class ProteinType(ABC): ...
 
 
 ## Basic Types
@@ -184,6 +180,9 @@ class ESMProteinTensor(ProteinType):
     # Such sequences may not go through standard safety filter for approved users.
     # Reach out if interested in using this.
     potential_sequence_of_concern: bool = False
+    # Control vectors are vectors added to each layer of the model to nudge hidden states to the desired direction.
+    # len(control_vectors)  == number of blocks in the model. Each vector in the list have the shape of (batch size, sequence length, hidden dim)
+    # so it can be added to the corresponding layer in the model
 
     def _detect_attribute(self, func, msg):
         mapped = {
@@ -260,20 +259,40 @@ class ESMProteinError(Exception, ProteinType):
 class GenerationConfig:
     track: str = ""
     invalid_ids: Sequence[int] = []
-    schedule: str = "cosine"
+    # Controls the number of tokens to unmask during each round of iterative generation.
+    schedule: str = attr.field(
+        validator=attr.validators.in_(["cosine", "linear"]), default="cosine"
+    )
+    # Controls which tokens to unmask during each round of iterative generation.
+    # "random" will unmask a correct number of tokens randomly.
+    # "entropy" will unmask the tokens with the lowest logit entropy first.
+    strategy: str = attr.field(
+        validator=attr.validators.in_(["random", "entropy"]), default="entropy"
+    )
     # Set this to a higher value for better generation results.
     # Note that this needs to be less than or equal to the sequence length.
     num_steps: int = 1
     temperature: float = 1.0
+    temperature_annealing: bool = False
     top_p: float = 1.0
     condition_on_coordinates_only: bool = True
+
+    def use_entropy_based_unmasking_strategy(self):
+        """Use entropy based unmasking strategy during generation."""
+        self.schedule = "cosine"
+        self.strategy = "entropy"
+        self.temperature_annealing = False
+
+    def use_generative_unmasking_strategy(self):
+        """Use an unmasking strategy that produces more variety of generations."""
+        self.schedule = "cosine"
+        self.strategy = "random"
+        self.temperature_annealing = True
 
 
 @define
 class InverseFoldingConfig:
     invalid_ids: Sequence[int] = []
-    schedule: str = "cosine"
-    num_steps: int = 1
     temperature: float = 1.0
 
 
@@ -370,9 +389,7 @@ class ESM3InferenceClient(ABC):
         raise NotImplementedError
 
     def batch_generate(
-        self,
-        inputs: Sequence[ProteinType],
-        configs: Sequence[GenerationConfig],
+        self, inputs: Sequence[ProteinType], configs: Sequence[GenerationConfig]
     ) -> Sequence[ProteinType]:
         # Same as generate(...), but generates a batch of proteins at once.
         raise NotImplementedError

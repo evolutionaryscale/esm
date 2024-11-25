@@ -127,11 +127,7 @@ class InterPro:
             col in df.columns for col in ["ENTRY_AC", "ENTRY_TYPE", "ENTRY_NAME"]
         )
         df.rename(
-            columns={
-                "ENTRY_AC": "id",
-                "ENTRY_TYPE": "type",
-                "ENTRY_NAME": "name",
-            },
+            columns={"ENTRY_AC": "id", "ENTRY_TYPE": "type", "ENTRY_NAME": "name"},
             inplace=True,
         )
         df["type"] = df.type.str.upper().apply(

@@ -97,9 +97,7 @@ def test_num_decoding_steps_more_than_mask_tokens_batched(esm3_remote_inference_
 
 @pytest.mark.gpu
 def test_encode_chainbreak_token(esm3_remote_inference_client):
-    protein = esm3_remote_inference_client.encode(
-        ESMProtein(sequence="MSTNP|KPQKK"),
-    )
+    protein = esm3_remote_inference_client.encode(ESMProtein(sequence="MSTNP|KPQKK"))
     assert isinstance(protein, ESMProteinTensor)
     assert protein.sequence is not None
     assert (

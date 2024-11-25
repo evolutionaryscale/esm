@@ -10,11 +10,7 @@ from esm.layers.rotary import RotaryEmbedding
 
 class MultiHeadAttention(nn.Module):
     def __init__(
-        self,
-        d_model: int,
-        n_heads: int,
-        bias: bool = False,
-        qk_layernorm: bool = True,
+        self, d_model: int, n_heads: int, bias: bool = False, qk_layernorm: bool = True
     ):
         super().__init__()
 

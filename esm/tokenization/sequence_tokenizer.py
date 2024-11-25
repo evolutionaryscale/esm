@@ -40,9 +40,7 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
         self.cb_token = chain_break_token
         additional_special_tokens = [chain_break_token]
 
-        tokenizer.add_special_tokens(
-            special_tokens,
-        )
+        tokenizer.add_special_tokens(special_tokens)
 
         # This is where we configure the automatic addition of special tokens when we call
         # tokenizer(text, add_special_tokens=True). Note that you can also configure how two

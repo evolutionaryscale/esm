@@ -128,9 +128,7 @@ def iterative_sampling_raw(
 
 
 def _make_masked_inputs(
-    track: str,
-    sequence_length: int,
-    tokenizers: TokenizerCollectionProtocol,
+    track: str, sequence_length: int, tokenizers: TokenizerCollectionProtocol
 ):
     get_tokenizer: Callable[[str], EsmTokenizerBase] = lambda s: getattr(tokenizers, s)
 
@@ -190,8 +188,7 @@ def _stack_protein_tensors(
             o,
             fn,
             stack_variable_length_tensors(
-                sequences=tensors,
-                constant_value=mask_token_id,
+                sequences=tensors, constant_value=mask_token_id
             ),
         )
 
@@ -240,6 +237,11 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     shape = tokens.shape
     B, L = shape[0], shape[1]
 
+    # TODO: figure out why we want this function to work with
+    # _BatchedESMProteinTensor in the first place. Logics below
+    # don't really work for batched tensors.
+    assert B == 1
+
     sampling_mask = torch.ones((B, L), dtype=torch.bool, device=device)
     sampling_mask[:, 0] = False  # BOS
     # EOS and all padding tokens.
@@ -248,9 +250,7 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     ).to(device)
 
     is_mask = _get_masked_positions(
-        track_to_sample,
-        tokens,
-        getattr(tokenizers, track_to_sample).mask_token_id,
+        track_to_sample, tokens, getattr(tokenizers, track_to_sample).mask_token_id
     )
     if not is_mask.any().item():
         raise ValueError(f"Cannot sample {config.track} when input has no masks.")
@@ -273,27 +273,36 @@ def _get_iterative_sampling_mask_for_prompt_and_step(
     ).int()
     num_to_sample = still_masked - num_tokens_masked_after_this_step
 
-    track_entropy: torch.Tensor = getattr(entropy, track_to_sample).to(
-        device
-    )  # (B, L) or (B, L, D)
+    if config.strategy == "entropy":
+        track_entropy: torch.Tensor = getattr(entropy, track_to_sample).to(
+            device
+        )  # (B, L) or (B, L, D)
 
-    if track_to_sample == "function":
-        track_entropy = track_entropy.sum(-1)  # (B, L, D) -> (B, L)
+        if track_to_sample == "function":
+            track_entropy = track_entropy.sum(-1)  # (B, L, D) -> (B, L)
 
-    track_entropy = track_entropy.masked_fill(
-        ~sampling_mask, torch.finfo(track_entropy.dtype).max
-    )
-    _, indices = track_entropy.topk(num_to_sample, dim=-1, largest=False)
-    is_top_k = torch.zeros((B, L), dtype=torch.bool, device=device).scatter(
-        1, indices, True
-    )
-    where_to_sample = sampling_mask & is_top_k
+        track_entropy = track_entropy.masked_fill(
+            ~sampling_mask, torch.finfo(track_entropy.dtype).max
+        )
+        _, indices = track_entropy.topk(num_to_sample, dim=-1, largest=False)
+        is_top_k = torch.zeros((B, L), dtype=torch.bool, device=device).scatter(
+            1, indices, True
+        )
+        where_to_sample = sampling_mask & is_top_k
+    elif config.strategy == "random":
+        # Skip B since we know there is only 1 prompt here.
+        _, masked_indices = sampling_mask.nonzero(as_tuple=True)
+        # Random shuffle the masked indices then select the first num_to_sample.
+        rnd_indices = masked_indices[torch.randperm(len(masked_indices))][
+            :num_to_sample
+        ]
+        rnd_mask = torch.zeros_like(sampling_mask)
+        rnd_mask[:, rnd_indices] = True
+        where_to_sample = sampling_mask & rnd_mask
 
     if track_to_sample == "function":
         where_to_sample = where_to_sample.unsqueeze(-1).expand(
-            B,
-            L,
-            tokenizers.function.depth,
+            B, L, tokenizers.function.depth
         )  # (B, L) -> (B, L, D)
 
     return where_to_sample
@@ -314,6 +323,11 @@ def _get_non_special_tokens(
         mask[protein.sequence == special_token] = 0
 
     return int(torch.sum(mask).item())
+
+
+def _get_annealed_temperature(step: int, num_steps: int, initial_temperature: float):
+    step_ratio = step / max(1, (num_steps - 1))
+    return max(initial_temperature - step_ratio, 0.001) ** 2
 
 
 def iterative_sampling_tokens(
@@ -345,9 +359,7 @@ def iterative_sampling_tokens(
             num_sampling_steps = _get_non_special_tokens(protein, tokenizers)
         else:
             masked = _get_masked_positions(
-                track,
-                getattr(protein, track),
-                getattr(tokenizers, track).mask_token_id,
+                track, getattr(protein, track), getattr(tokenizers, track).mask_token_id
             )
             num_sampling_steps = torch.sum(masked).item()
 
@@ -365,10 +377,7 @@ def iterative_sampling_tokens(
 
     # Now stack the list to make a single batched ESMProteinTensor.
     batched_tokens = _stack_protein_tensors(
-        sampled_tokens,
-        sequence_lengths,
-        tokenizers,
-        devices.pop(),
+        sampled_tokens, sequence_lengths, tokenizers, devices.pop()
     )
 
     # Remember sampled prompts that has somehow errored out.
@@ -418,9 +427,18 @@ def iterative_sampling_tokens(
                 len(per_prompt_cur_sampled),
             )
 
+            # Handle temperature annealing, since _sample_per_prompt() doesn't have
+            # the concept of decoding steps.
+            if config.temperature_annealing:
+                temperature = _get_annealed_temperature(
+                    t, config.num_steps, config.temperature
+                )
+            else:
+                temperature = config.temperature
+
             track_sample_config = SamplingTrackConfig()
             track_sample_config.invalid_ids = config.invalid_ids
-            track_sample_config.temperature = config.temperature
+            track_sample_config.temperature = temperature
             track_sample_config.top_p = config.top_p
             sampling_config = SamplingConfig(**{config.track: track_sample_config})  # type: ignore
 
@@ -486,7 +504,7 @@ def iterative_sampling_tokens(
         setattr(outputs, "coordinates", getattr(inputs, "coordinates"))
         # Maybe restore all the other fields.
         for f in attr.fields(SamplingConfig):
-            if "embedding" in f.name:
+            if "embedding" in f.name or f.name == "return_hidden_states":
                 continue
             if f.name != config.track:
                 setattr(outputs, f.name, getattr(inputs, f.name))
@@ -494,10 +512,7 @@ def iterative_sampling_tokens(
     return output_tokens
 
 
-def _batch_forward(
-    client: ESM3InferenceClient,
-    protein: _BatchedESMProteinTensor,
-):
+def _batch_forward(client: ESM3InferenceClient, protein: _BatchedESMProteinTensor):
     # Forward pass
     return client.logits(
         protein,

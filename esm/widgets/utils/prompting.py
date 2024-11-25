@@ -196,9 +196,7 @@ class PromptManager:
 
     def redraw(self, change=None):
         categories = ["Mask (-)"]
-        color_map = {
-            "Mask (-)": "white",
-        }
+        color_map = {"Mask (-)": "white"}
         data_array = [0] * self.prompt_length
         for prompt_str, *_ in self.prompts.items():
             color, _, _ = self.prompts[prompt_str]
@@ -282,7 +280,7 @@ class PromptManager:
             value=(
                 f'<div style="display: inline-block; width: 10px; height: 10px; background-color:{label_color}; margin-right: 5px;"></div>'
                 f"{range_string}"
-            ),
+            )
         )
         entry_label.tag = range_string  # type: ignore
         entry_container = widgets.HBox([entry_button, entry_label])

@@ -1,4 +1,3 @@
-import math
 import os
 from collections import defaultdict
 from typing import ContextManager, Sequence, TypeVar
@@ -226,8 +225,7 @@ def merge_ranges(ranges: list[range], merge_gap_max: int | None = None) -> list[
 
 
 def merge_annotations(
-    annotations: list[FunctionAnnotation],
-    merge_gap_max: int | None = None,
+    annotations: list[FunctionAnnotation], merge_gap_max: int | None = None
 ) -> list[FunctionAnnotation]:
     """Merges annotations into non-overlapping segments.
 
@@ -256,42 +254,24 @@ def merge_annotations(
     return merged
 
 
-def list_nan_to_none(l: list) -> list:
-    if l is None:
-        return None  # type: ignore
-    elif isinstance(l, float):
-        return None if math.isnan(l) else l  # type: ignore
-    elif isinstance(l, list):
-        return [list_nan_to_none(x) for x in l]
-    else:
-        # Don't go into other structures.
-        return l
-
-
-def list_none_to_nan(l: list) -> list:
-    if l is None:
-        return math.nan  # type: ignore
-    elif isinstance(l, list):
-        return [list_none_to_nan(x) for x in l]
-    else:
-        return l
-
-
 def maybe_tensor(x, convert_none_to_nan: bool = False) -> torch.Tensor | None:
     if x is None:
         return None
     if convert_none_to_nan:
-        x = list_none_to_nan(x)
+        x = np.array(x, copy=False, dtype=np.float32)
+        x = np.where(x is None, np.nan, x)
     return torch.tensor(x)
 
 
 def maybe_list(x, convert_nan_to_none: bool = False) -> list | None:
     if x is None:
         return None
-    x = x.tolist()
-    if convert_nan_to_none:
-        x = list_nan_to_none(x)
-    return x
+    if not convert_nan_to_none:
+        return x.tolist()
+    nan_mask = torch.isnan(x)
+    np_arr = x.cpu().numpy().astype(object)
+    np_arr[nan_mask.cpu().numpy()] = None
+    return np_arr.tolist()
 
 
 def huggingfacehub_login():

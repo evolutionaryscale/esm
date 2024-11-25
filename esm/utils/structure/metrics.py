@@ -139,18 +139,13 @@ def compute_gdt_ts(
     """
     if atom_exists_mask is None:
         atom_exists_mask = torch.isfinite(target).all(dim=-1)
-    (
-        centered_mobile,
-        _,
-        centered_target,
-        _,
-        rotation_matrix,
-        _,
-    ) = compute_alignment_tensors(
-        mobile=mobile,
-        target=target,
-        atom_exists_mask=atom_exists_mask,
-        sequence_id=sequence_id,
+    (centered_mobile, _, centered_target, _, rotation_matrix, _) = (
+        compute_alignment_tensors(
+            mobile=mobile,
+            target=target,
+            atom_exists_mask=atom_exists_mask,
+            sequence_id=sequence_id,
+        )
     )
 
     # Apply transformation to centered structure

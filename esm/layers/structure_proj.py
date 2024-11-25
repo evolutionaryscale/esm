@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
 
-from esm.utils.constants.physics import (
-    BB_COORDINATES,
-)
+from esm.utils.constants.physics import BB_COORDINATES
 from esm.utils.structure.affine3d import (
     Affine3D,
     RotationMatrix,

@@ -5,12 +5,7 @@ from urllib.parse import urljoin
 
 import requests
 import torch
-from tenacity import (
-    retry,
-    retry_if_result,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponential
 
 from esm.sdk.api import (
     ESM3InferenceClient,
@@ -20,6 +15,7 @@ from esm.sdk.api import (
     ForwardAndSampleOutput,
     ForwardTrackData,
     GenerationConfig,
+    InverseFoldingConfig,
     LogitsConfig,
     LogitsOutput,
     ProteinType,
@@ -55,7 +51,15 @@ def log_retry_attempt(retry_state):
     )
 
 
-class FoldForgeInferenceClient:
+def _validate_protein_tensor_input(input):
+    if not isinstance(input, ESMProteinTensor):
+        raise ValueError(
+            "Input must be an ESMProteinTensor instance. "
+            "Use encode() API to encode an ESMProtein into ESMProteinTensor."
+        )
+
+
+class SequenceStructureForgeInferenceClient:
     def __init__(
         self,
         url: str = "https://forge.evolutionaryscale.ai",
@@ -73,31 +77,51 @@ class FoldForgeInferenceClient:
 
     def fold(
         self,
-        model_name: str,
         sequence: str,
         potential_sequence_of_concern: bool,
-    ) -> torch.Tensor | ESMProteinError:
-        request = {
-            "model": model_name,
-            "sequence": sequence,
-        }
+        model_name: str | None = None,
+    ) -> ESMProtein | ESMProteinError:
+        request = {"sequence": sequence}
+        if model_name is not None:
+            request["model"] = model_name
         try:
-            data = self._post(
-                "fold",
-                request,
-                potential_sequence_of_concern,
-            )
+            data = self._post("fold", request, potential_sequence_of_concern)
         except ESMProteinError as e:
             return e
 
-        return data["coordinates"]
+        return ESMProtein(
+            coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True)
+        )
+
+    def inverse_fold(
+        self,
+        coordinates: torch.Tensor,
+        config: InverseFoldingConfig,
+        potential_sequence_of_concern: bool,
+        model_name: str | None = None,
+    ) -> ESMProtein | ESMProteinError:
+        inverse_folding_config = {
+            "invalid_ids": config.invalid_ids,
+            "temperature": config.temperature,
+        }
+        request = {
+            "coordinates": maybe_list(coordinates, convert_nan_to_none=True),
+            "inverse_folding_config": inverse_folding_config,
+        }
+        if model_name is not None:
+            request["model"] = model_name
+        try:
+            data = self._post("inverse_fold", request, potential_sequence_of_concern)
+        except ESMProteinError as e:
+            return e
+
+        return ESMProtein(sequence=data["sequence"])
 
     def _post(self, endpoint, request, potential_sequence_of_concern):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
 
-        model_name_url = request["model"] if request["model"] != "esm3" else "api"
         response = requests.post(
-            urljoin(self.url, f"/{model_name_url}/v1/{endpoint}"),
+            urljoin(self.url, f"/api/v1/{endpoint}"),
             json=request,
             headers=self.headers,
             timeout=self.request_timeout,
@@ -114,6 +138,11 @@ class FoldForgeInferenceClient:
         # Lift it up for easier downstream processing.
         if "outputs" not in data and "data" in data:
             data = data["data"]
+
+        # Print warning message if there is any.
+        if "warning_messages" in data and data["warning_messages"] is not None:
+            for msg in data["warning_messages"]:
+                print("\033[31m", msg, "\033[0m")
 
         return data
 
@@ -174,18 +203,13 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             output = self.__generate_protein_tensor(input, config)
         else:
             return ESMProteinError(
-                error_code=500,
-                error_msg=f"Unknown input type {type(input)}",
+                error_code=500, error_msg=f"Unknown input type {type(input)}"
             )
 
         if (
             isinstance(output, ESMProtein)
             and isinstance(input, ESMProtein)
-            and config.track
-            not in [
-                "function",
-                "residue_annotations",
-            ]
+            and config.track not in ["function", "residue_annotations"]
         ):
             # Function and residue annotation encoding/decoding is lossy
             # There is no guarantee that decoding encoded tokens will yield the same input
@@ -218,9 +242,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         return [_capture_exception(r) for r in results]
 
     def __generate_protein(
-        self,
-        input: ESMProtein,
-        config: GenerationConfig,
+        self, input: ESMProtein, config: GenerationConfig
     ) -> ESMProtein | ESMProteinError:
         req = {}
         req["sequence"] = input.sequence
@@ -261,9 +283,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         )
 
     def __generate_protein_tensor(
-        self,
-        input: ESMProteinTensor,
-        config: GenerationConfig,
+        self, input: ESMProteinTensor, config: GenerationConfig
     ) -> ESMProteinTensor | ESMProteinError:
         req = {}
         req["sequence"] = maybe_list(input.sequence)
@@ -316,6 +336,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput | ESMProteinError:
+        _validate_protein_tensor_input(input)
         validate_sampling_config(sampling_configuration, on_invalid="raise")
 
         req = {}
@@ -441,10 +462,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         )
 
     @retry_decorator
-    def decode(
-        self,
-        input: ESMProteinTensor,
-    ) -> ESMProtein | ESMProteinError:
+    def decode(self, input: ESMProteinTensor) -> ESMProtein | ESMProteinError:
+        _validate_protein_tensor_input(input)
+
         tokens = {}
         tokens["sequence"] = maybe_list(input.sequence)
         tokens["structure"] = maybe_list(input.structure)
@@ -454,10 +474,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         tokens["residue_annotation"] = maybe_list(input.residue_annotations)
         tokens["coordinates"] = maybe_list(input.coordinates, convert_nan_to_none=True)
 
-        request = {
-            "model": self.model,
-            "inputs": tokens,
-        }
+        request = {"model": self.model, "inputs": tokens}
 
         try:
             data = self._post("decode", request, input.potential_sequence_of_concern)
@@ -482,6 +499,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
     def logits(
         self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
     ) -> LogitsOutput | ESMProteinError:
+        _validate_protein_tensor_input(input)
+
         # Note: using raw model forwards is discouraged because of the byte size
         # of the logits.
         # Please use forward_and_sample instead.
@@ -504,11 +523,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "return_embeddings": config.return_embeddings,
         }
 
-        request = {
-            "model": self.model,
-            "inputs": req,
-            "logits_config": logits_config,
-        }
+        request = {"model": self.model, "inputs": req, "logits_config": logits_config}
 
         try:
             data = self._post("logits", request, input.potential_sequence_of_concern)

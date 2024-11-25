@@ -254,10 +254,7 @@ def compute_affine_and_rmsd(
     # Apply transformation to centered structure to compute rmsd
     rotated_mobile = torch.matmul(centered_mobile, rotation_matrix)
     avg_rmsd = compute_rmsd_no_alignment(
-        rotated_mobile,
-        centered_target,
-        num_valid_atoms,
-        reduction="batch",
+        rotated_mobile, centered_target, num_valid_atoms, reduction="batch"
     )
 
     return affine, avg_rmsd
