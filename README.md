@@ -21,10 +21,10 @@ ESM C comes with major performance benefits over ESM2. The 300M parameter ESM C 
 
 ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find our [open](www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) and [non-commercial](www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) license agreements here.
 
-You can use the following guides to start using ESM-C models today through [HF](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/sagemaker/).
+You can use the following guides to start using ESM C models today through [HF](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/sagemaker/).
 
 ### Using ESM C 300M and 600M via GitHub
-ESM-C model weights are stored on the HuggingFace hub under https://huggingface.co/EvolutionaryScale/.
+ESM C model weights are stored on the HuggingFace hub under https://huggingface.co/EvolutionaryScale/.
 ```py
 from esm.models.esmc import ESMC
 from esm.sdk.api import ESMProtein, LogitsConfig
@@ -40,7 +40,7 @@ print(logits_output.logits, logits_output.embeddings)
 
 ### Using ESM C 6B via Forge API
 
-ESM-C models, including ESMC 6B, are accessible via EvolutionaryScale Forge. You can request access and utilize these models through forge.evolutionaryscale.ai, as demonstrated in the example below.
+ESM C models, including ESMC 6B, are accessible via EvolutionaryScale Forge. You can request access and utilize these models through forge.evolutionaryscale.ai, as demonstrated in the example below.
 ```py
 from evolutionaryscale.opensource.sdk.forge import ESM3ForgeInferenceClient
 from esm.sdk.api import ESMProtein, LogitsConfig
@@ -56,7 +56,7 @@ print(logits_output.logits, logits_output.embeddings)
 
 ### Using ESM C 6B via SageMaker
 
-ESM-C models are also available on Amazon SageMaker. They function similarly to the ESM3 model family, and you can refer to the sample notebooks provided in this repository for examples.
+ESM C models are also available on Amazon SageMaker. They function similarly to the ESM3 model family, and you can refer to the sample notebooks provided in this repository for examples.
 
 After creating the endpoint, you can create a sagemaker client and use it the same way as a forge client. They share the same API.
 
