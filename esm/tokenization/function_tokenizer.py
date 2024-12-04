@@ -19,7 +19,7 @@ from esm.utils.types import FunctionAnnotation, PathLike
 
 
 def _default_data_path(x: PathLike | None, d: PathLike) -> PathLike:
-    return x if x is not None else C.data_root() / d
+    return x if x is not None else C.data_root("esm3") / d
 
 
 def _default_local_data_path(x: PathLike | None, d: PathLike) -> PathLike:

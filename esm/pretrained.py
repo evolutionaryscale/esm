@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from esm.models.esm3 import ESM3
+from esm.models.esmc import ESMC
 from esm.models.function_decoder import FunctionTokenDecoder
 from esm.models.vqvae import (
     StructureTokenDecoder,
@@ -16,6 +17,8 @@ from esm.utils.constants.models import (
     ESM3_OPEN_SMALL,
     ESM3_STRUCTURE_DECODER_V0,
     ESM3_STRUCTURE_ENCODER_V0,
+    ESMC_300M,
+    ESMC_600M,
 )
 
 ModelBuilder = Callable[[torch.device | str], nn.Module]
@@ -27,7 +30,8 @@ def ESM3_structure_encoder_v0(device: torch.device | str = "cpu"):
             d_model=1024, n_heads=1, v_heads=128, n_layers=2, d_out=128, n_codes=4096
         ).eval()
     state_dict = torch.load(
-        data_root() / "data/weights/esm3_structure_encoder_v0.pth", map_location=device
+        data_root("esm3") / "data/weights/esm3_structure_encoder_v0.pth",
+        map_location=device,
     )
     model.load_state_dict(state_dict)
     return model
@@ -37,7 +41,8 @@ def ESM3_structure_decoder_v0(device: torch.device | str = "cpu"):
     with torch.device(device):
         model = StructureTokenDecoder(d_model=1280, n_heads=20, n_layers=30).eval()
     state_dict = torch.load(
-        data_root() / "data/weights/esm3_structure_decoder_v0.pth", map_location=device
+        data_root("esm3") / "data/weights/esm3_structure_decoder_v0.pth",
+        map_location=device,
     )
     model.load_state_dict(state_dict)
     return model
@@ -47,9 +52,44 @@ def ESM3_function_decoder_v0(device: torch.device | str = "cpu"):
     with torch.device(device):
         model = FunctionTokenDecoder().eval()
     state_dict = torch.load(
-        data_root() / "data/weights/esm3_function_decoder_v0.pth", map_location=device
+        data_root("esm3") / "data/weights/esm3_function_decoder_v0.pth",
+        map_location=device,
     )
     model.load_state_dict(state_dict)
+    return model
+
+
+def ESMC_300M_202412(device: torch.device | str = "cpu"):
+    with torch.device(device):
+        model = ESMC(
+            d_model=960,
+            n_heads=15,
+            n_layers=30,
+            tokenizer=get_model_tokenizers(ESM3_OPEN_SMALL).sequence,
+        ).eval()
+    state_dict = torch.load(
+        data_root("esmc-300") / "data/weights/esmc_300m_2024_12_v0.pth",
+        map_location=device,
+    )
+    model.load_state_dict(state_dict)
+
+    return model
+
+
+def ESMC_600M_202412(device: torch.device | str = "cpu"):
+    with torch.device(device):
+        model = ESMC(
+            d_model=1152,
+            n_heads=18,
+            n_layers=36,
+            tokenizer=get_model_tokenizers(ESM3_OPEN_SMALL).sequence,
+        ).eval()
+    state_dict = torch.load(
+        data_root("esmc-600") / "data/weights/esmc_600m_2024_12_v0.pth",
+        map_location=device,
+    )
+    model.load_state_dict(state_dict)
+
     return model
 
 
@@ -66,7 +106,7 @@ def ESM3_sm_open_v0(device: torch.device | str = "cpu"):
             tokenizers=get_model_tokenizers(ESM3_OPEN_SMALL),
         ).eval()
     state_dict = torch.load(
-        data_root() / "data/weights/esm3_sm_open_v1.pth", map_location=device
+        data_root("esm3") / "data/weights/esm3_sm_open_v1.pth", map_location=device
     )
     model.load_state_dict(state_dict)
     return model
@@ -77,6 +117,8 @@ LOCAL_MODEL_REGISTRY: dict[str, ModelBuilder] = {
     ESM3_STRUCTURE_ENCODER_V0: ESM3_structure_encoder_v0,
     ESM3_STRUCTURE_DECODER_V0: ESM3_structure_decoder_v0,
     ESM3_FUNCTION_DECODER_V0: ESM3_function_decoder_v0,
+    ESMC_600M: ESMC_600M_202412,
+    ESMC_300M: ESMC_300M_202412,
 }
 
 

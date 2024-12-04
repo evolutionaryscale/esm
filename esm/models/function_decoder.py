@@ -42,7 +42,7 @@ class FunctionTokenDecoderConfig:
     interpro_entry_list: str = field(default_factory=lambda: str(C.INTERPRO_ENTRY))
     # Path to keywords vocabulary.
     keyword_vocabulary_path: str = field(
-        default_factory=lambda: str(C.data_root() / C.KEYWORDS_VOCABULARY)
+        default_factory=lambda: str(C.data_root("esm3") / C.KEYWORDS_VOCABULARY)
     )
     # Whether to unpack LSH bits into single-bit tokens.
     unpack_lsh_bits: bool = True

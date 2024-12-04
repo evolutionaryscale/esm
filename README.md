@@ -1,4 +1,72 @@
-# ESM3
+# Table of Contents
+
+1. [Installation](#installation)
+2. [ESM C](#esm-c)
+3. [ESM 3](#esm3)
+4. [Responsible Development](#responsible-development)
+5. [License](#license)
+
+## Installation
+
+To get started with ESM, install the library using pip:
+
+```bash
+pip install esm
+```
+
+## ESM C
+[ESM Cambrian](https://www.evolutionaryscale.ai/blog/esm-cambrian) is a parallel model family to our flagship ESM3 generative models. While ESM3 focuses on controllable generation of proteins for therapeutic and many other applications, ESM C focuses on creating representations of the underlying biology of proteins.
+
+ESM C comes with major performance benefits over ESM2. The 300M parameter ESM C delivers similar performance to ESM2 650M with dramatically reduced memory requirements and faster inference. The 600M parameter ESM C rivals the 3B parameter ESM2 and approaches the capabilities of the 15B model, delivering frontier performance with far greater efficiency. At the leading edge, the 6B parameter ESM C sets a new benchmark, outperforming all prior protein language models by a wide margin.
+
+ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find our [open](www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) and [non-commercial](www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) license agreements here.
+
+You can use the following guides to start using ESM-C models today through [HF](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/sagemaker/).
+
+### Using ESM C 300M and 600M via GitHub
+ESM-C model weights are stored on the HuggingFace hub under https://huggingface.co/EvolutionaryScale/.
+```py
+from esm.models.esmc import ESMC
+from esm.sdk.api import ESMProtein, LogitsConfig
+
+protein = ESMProtein(sequence="AAAAA")
+client = ESMC.from_pretrained("esmc_300m").to("cuda") # or "cpu"
+protein_tensor = client.encode(protein)
+logits_output = client.logits(
+   protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+)
+print(logits_output.logits, logits_output.embeddings)
+```
+
+### Using ESM C 6B via Forge API
+
+ESM-C models, including ESMC 6B, are accessible via EvolutionaryScale Forge. You can request access and utilize these models through forge.evolutionaryscale.ai, as demonstrated in the example below.
+```py
+from evolutionaryscale.opensource.sdk.forge import ESM3ForgeInferenceClient
+from esm.sdk.api import ESMProtein, LogitsConfig
+
+# Apply for forge access and get an access token
+forge_client = ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token="<your forge token>")
+protein_tensor = forge_client.encode(protein)
+logits_output = forge_client.logits(
+   protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+)
+print(logits_output.logits, logits_output.embeddings)
+```
+
+### Using ESM C 6B via SageMaker
+
+ESM-C models are also available on Amazon SageMaker. They function similarly to the ESM3 model family, and you can refer to the sample notebooks provided in this repository for examples.
+
+After creating the endpoint, you can create a sagemaker client and use it the same way as a forge client. They share the same API.
+
+```py
+sagemaker_client = ESM3SageMakerClient(
+   endpoint_name=SAGE_ENDPOINT_NAME, model=<model_name>
+)
+```
+
+## ESM 3
 
 [ESM3](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model) is a frontier generative model for biology, able to jointly reason across three fundamental biological properties of proteins: sequence, structure, and function. These three data modalities are represented as tracks of discrete tokens at the input and output of ESM3. You can present the model with a combination of partial inputs across the tracks, and ESM3 will provide output predictions for all the tracks.
 
@@ -11,10 +79,10 @@ The ESM3 architecture is highly scalable due to its transformer backbone and all
 Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the pre-print (Hayes et al., 2024)](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model).
 
 Here we present `esm3-open-small`. With 1.4B parameters it is the smallest and fastest model in the family.
-ESM3-open is available under a [non-commercial license](https://www.evolutionaryscale.ai/policies/community-license-agreement), reproduced under `LICENSE.md`.
+ESM3-open is available under the [Cambrian non-commercial license agreement](https://www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement), as outlined in `LICENSE.md` (note: updated with ESM C release).
 Visit our [Discussions page](https://github.com/evolutionaryscale/esm/discussions) to get in touch, provide feedback, ask questions or share your experience with ESM3!
 
-## Quickstart for ESM3-open
+### Quickstart for ESM3-open
 
 ```
 pip install esm
@@ -65,7 +133,7 @@ We also provide example scripts that show common workflows under `examples/`:
 - [local_generate.py](./examples/local_generate.py) shows how simple and elegant common tasks are: it shows folding, inverse folding and chain of thought generation, all by calling just `model.generate()` for iterative decoding.
 - [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
-## Forge: Access to larger ESM3 models
+### Forge: Access to larger ESM3 models
 
 You can apply for beta access to the full family of larger and higher capability ESM3 models at [EvolutionaryScale Forge](https://forge.evolutionaryscale.ai).
 
@@ -101,19 +169,4 @@ The core tenets of our framework are
 With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model)
 
 ## License
-
-**The Big Picture:**
-
-1. The EvolutionaryScale AI Model is **only** available under this Community License Agreement for **non-commercial use** by **individuals** or **non-commercial organizations** (including universities, non-profit organizations and research institutes, educational and government bodies).
-
-2. You **may not** use the EvolutionaryScale AI Model or any derivative works of the EvolutionaryScale AI Model or its outputs:
-
-   1. in connection with **any commercial activities**, for example, any activities **by, on behalf of or for a commercial entity** or to develop **any product or service** such as hosting the AI Model behind an API; or
-
-   2. without attribution to EvolutionaryScale and this Community License Agreement; or
-
-   3. to **train** a AI-powered third party model **similar to EvolutionaryScale’s AI Model**, even for non-commercial usage. You may, however, create **Derivative Works** of ESM3, for example by finetuning or adding model layers.
-
-3. You **can publish, share and adapt** the EvolutionaryScale AI Model and its outputs for **non-commercial purposes** in accordance with the Community License Agreement, including a **non-commercial restriction** on the adapted model.
-
-Please read our non-commercial [Community License Agreement](https://www.evolutionaryscale.ai/policies/community-license-agreement) reproduced under [./LICENSE.md](LICENSE.md) before using ESM3.
+The code and model weights of ESM3 and ESM C are available under a mixture of non-commercial and more permissive licenses, fully outlined in [LICENSE.md](LICENSE.md).

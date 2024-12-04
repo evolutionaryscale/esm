@@ -97,11 +97,18 @@ TFIDF_VECTOR_SIZE = 58641
 
 @staticmethod
 @cache
-def data_root():
+def data_root(model: str):
     if "INFRA_PROVIDER" in os.environ:
         return Path("")
     # Try to download from hugginface if it doesn't exist
-    path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
+    if model.startswith("esm3"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
+    elif model.startswith("esmc-300"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esmc-300m-2024-12"))
+    elif model.startswith("esmc-600"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esmc-600m-2024-12"))
+    else:
+        raise ValueError(f"{model=} is an invalid model name.")
     return path
 
 

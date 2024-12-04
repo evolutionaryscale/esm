@@ -43,7 +43,10 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x, seq_id):
         qkv_BLD3 = self.layernorm_qkv(x)
         query_BLD, key_BLD, value_BLD = torch.chunk(qkv_BLD3, 3, dim=-1)
-        query_BLD, key_BLD = self.q_ln(query_BLD), self.k_ln(key_BLD)
+        query_BLD, key_BLD = (
+            self.q_ln(query_BLD).to(query_BLD.dtype),
+            self.k_ln(key_BLD).to(query_BLD.dtype),
+        )
         query_BLD, key_BLD = self._apply_rotary(query_BLD, key_BLD)
 
         n_heads = self.n_heads

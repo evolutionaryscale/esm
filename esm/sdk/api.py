@@ -423,3 +423,23 @@ class ESM3InferenceClient(ABC):
     def raw_model(self):
         # Get underlying esm3 model of an inference client.
         raise NotImplementedError
+
+
+class ESMCInferenceClient(ABC):
+    def encode(self, input: ESMProtein) -> ESMProteinTensor:
+        # Encode allows for encoding RawRepresentation into TokenizedRepresentation.
+        raise NotImplementedError
+
+    def decode(self, input: ESMProteinTensor) -> ESMProtein:
+        # Decode is the inverse of encode
+        raise NotImplementedError
+
+    def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        raise NotImplementedError
+
+    @property
+    def raw_model(self):
+        # Get underlying esmc model of an inference client.
+        raise NotImplementedError
