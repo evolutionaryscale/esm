@@ -47,6 +47,7 @@ from esm.sdk.api import ESMProtein, LogitsConfig
 
 # Apply for forge access and get an access token
 forge_client = ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token="<your forge token>")
+protein = ESMProtein(sequence="AAAAA")
 protein_tensor = forge_client.encode(protein)
 logits_output = forge_client.logits(
    protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
