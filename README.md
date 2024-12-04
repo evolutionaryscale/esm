@@ -19,7 +19,7 @@ pip install esm
 
 ESM C comes with major performance benefits over ESM2. The 300M parameter ESM C delivers similar performance to ESM2 650M with dramatically reduced memory requirements and faster inference. The 600M parameter ESM C rivals the 3B parameter ESM2 and approaches the capabilities of the 15B model, delivering frontier performance with far greater efficiency. The 6B parameter ESM C sets a new benchmark, outperforming the best ESM2 models by a wide margin.
 
-ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find our [open](www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) and [non-commercial](www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) license agreements here.
+ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find our [open](https://www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) and [non-commercial](https://www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) license agreements here.
 
 You can use the following guides to start using ESM C models today through [HF](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/sagemaker/).
 
