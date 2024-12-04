@@ -4,9 +4,9 @@
 2. [ESM C](#esm-c)
 3. [ESM 3](#esm3)
 4. [Responsible Development](#responsible-development)
-5. [License](#license)
+5. [License](#licenses)
 
-## Installation
+## Installation <a name="installation"></a>
 
 To get started with ESM, install the library using pip:
 
@@ -14,14 +14,14 @@ To get started with ESM, install the library using pip:
 pip install esm
 ```
 
-## ESM C
+## ESM C <a name="esm-c"></a>
 [ESM Cambrian](https://www.evolutionaryscale.ai/blog/esm-cambrian) is a parallel model family to our flagship ESM3 generative models. While ESM3 focuses on controllable generation of proteins for therapeutic and many other applications, ESM C focuses on creating representations of the underlying biology of proteins.
 
 ESM C comes with major performance benefits over ESM2. The 300M parameter ESM C delivers similar performance to ESM2 650M with dramatically reduced memory requirements and faster inference. The 600M parameter ESM C rivals the 3B parameter ESM2 and approaches the capabilities of the 15B model, delivering frontier performance with far greater efficiency. The 6B parameter ESM C sets a new benchmark, outperforming the best ESM2 models by a wide margin.
 
-ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find our [open](https://www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) and [non-commercial](https://www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) license agreements here.
+ESM C models are available immediately for academic and commercial use under a new license structure designed to promote openness and enable scientists and builders. You can find the high level take-away of the license structure in the [Licenses](#licenses) section of this page, and the full license structure in the [LICENSE.md](LICENSE.md) file.
 
-You can use the following guides to start using ESM C models today through [HF](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/sagemaker/).
+You can use the following guides to start using ESM C models today, either [running the model locally](https://huggingface.co/EvolutionaryScale), [the Forge API](https://forge.evolutionaryscale.ai/) and [AWS SageMaker](https://aws.amazon.com/marketplace/seller-profile?id=seller-iw2nbscescndm).
 
 ### Using ESM C 300M and 600M via GitHub
 ESM C model weights are stored on the HuggingFace hub under https://huggingface.co/EvolutionaryScale/.
@@ -42,7 +42,7 @@ print(logits_output.logits, logits_output.embeddings)
 
 ESM C models, including ESMC 6B, are accessible via EvolutionaryScale Forge. You can request access and utilize these models through forge.evolutionaryscale.ai, as demonstrated in the example below.
 ```py
-from evolutionaryscale.opensource.sdk.forge import ESM3ForgeInferenceClient
+from esm.sdk.forge import ESM3ForgeInferenceClient
 from esm.sdk.api import ESMProtein, LogitsConfig
 
 # Apply for forge access and get an access token
@@ -66,7 +66,7 @@ sagemaker_client = ESM3SageMakerClient(
 )
 ```
 
-## ESM 3
+## ESM 3  <a name="esm3"></a>
 
 [ESM3](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model) is a frontier generative model for biology, able to jointly reason across three fundamental biological properties of proteins: sequence, structure, and function. These three data modalities are represented as tracks of discrete tokens at the input and output of ESM3. You can present the model with a combination of partial inputs across the tracks, and ESM3 will provide output predictions for all the tracks.
 
@@ -155,7 +155,7 @@ model: ESM3InferenceClient = esm.sdk.client("esm3-medium-2024-08", token="<your 
 and the exact same code will work.
 This enables a seamless transition from smaller and faster models, to our large 98B protein language models for protein design work.
 
-## Responsible Development
+## Responsible Development <a name="responsible-development"></a>
 
 EvolutionaryScale is a public benefit company. Our mission is to develop artificial intelligence to understand biology for the benefit of human health and society, through partnership with the scientific community, and open, safe, and responsible research. Inspired by the history of our field as well as [new principles and recommendations](https://responsiblebiodesign.ai/), we have created a Responsible Development Framework to guide our work towards our mission with transparency and clarity.
 
@@ -168,5 +168,5 @@ The core tenets of our framework are
 
 With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model)
 
-## License
+## Licenses  <a name="licenses"></a>
 The code and model weights of ESM3 and ESM C are available under a mixture of non-commercial and more permissive licenses, fully outlined in [LICENSE.md](LICENSE.md).
