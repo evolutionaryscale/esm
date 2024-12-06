@@ -1,20 +1,12 @@
 from esm.models.esmc import ESMC
-from examples.local_generate import get_sample_protein
-from esm.sdk.api import (
-    ESMCInferenceClient,
-    LogitsConfig,
-    LogitsOutput,
-)
+from esm.sdk.api import ESMCInferenceClient, ESMProtein, LogitsConfig, LogitsOutput
 
 
 def main(client: ESMCInferenceClient):
     # ================================================================
     # Example usage: one single protein
     # ================================================================
-    protein = get_sample_protein()
-    protein.coordinates = None
-    protein.function_annotations = None
-    protein.sasa = None
+    protein = ESMProtein(sequence="AAAAA")
 
     # Use logits endpoint. Using bf16 for inference optimization
     protein_tensor = client.encode(protein)
@@ -32,8 +24,7 @@ def main(client: ESMCInferenceClient):
 
 
 def raw_forward(model: ESMC):
-    protein = get_sample_protein()
-    assert protein.sequence is not None
+    protein = ESMProtein(sequence="AAAAA")
     sequences = [protein.sequence, protein.sequence]
 
     # ================================================================
