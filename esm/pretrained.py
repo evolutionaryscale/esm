@@ -10,7 +10,7 @@ from esm.models.vqvae import (
     StructureTokenDecoder,
     StructureTokenEncoder,
 )
-from esm.tokenization import get_model_tokenizers
+from esm.tokenization import EsmSequenceTokenizer, get_model_tokenizers
 from esm.utils.constants.esm3 import data_root
 from esm.utils.constants.models import (
     ESM3_FUNCTION_DECODER_V0,
@@ -65,7 +65,7 @@ def ESMC_300M_202412(device: torch.device | str = "cpu"):
             d_model=960,
             n_heads=15,
             n_layers=30,
-            tokenizer=get_model_tokenizers(ESM3_OPEN_SMALL).sequence,
+            tokenizer=EsmSequenceTokenizer(),
         ).eval()
     state_dict = torch.load(
         data_root("esmc-300") / "data/weights/esmc_300m_2024_12_v0.pth",
@@ -82,7 +82,7 @@ def ESMC_600M_202412(device: torch.device | str = "cpu"):
             d_model=1152,
             n_heads=18,
             n_layers=36,
-            tokenizer=get_model_tokenizers(ESM3_OPEN_SMALL).sequence,
+            tokenizer=EsmSequenceTokenizer(),
         ).eval()
     state_dict = torch.load(
         data_root("esmc-600") / "data/weights/esmc_600m_2024_12_v0.pth",
