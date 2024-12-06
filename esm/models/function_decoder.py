@@ -172,7 +172,7 @@ class FunctionTokenDecoder(nn.Module):
             inputs = token_ids + vocab_offsets[None, :]
 
         embed = self.embedding(inputs)
-        encoding, _ = self.decoder(embed)
+        encoding, _, _ = self.decoder(embed)
         pooled = torch.mean(encoding, dim=1)
 
         return {name: head(pooled) for name, head in self.heads.items()}

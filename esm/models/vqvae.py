@@ -250,7 +250,7 @@ class StructureTokenEncoder(nn.Module):
 
         z = self.relative_positional_embedding(res_idxs[:, 0], res_idxs)
 
-        z, _ = self.transformer.forward(
+        z, _, _ = self.transformer.forward(
             x=z,
             sequence_id=knn_sequence_id,
             affine=affine,
@@ -397,7 +397,7 @@ class StructureTokenDecoder(nn.Module):
 
         x = self.embed(structure_tokens)
         # !!! NOTE: Attention mask is actually unused here so watch out
-        x, _ = self.decoder_stack.forward(
+        x, _, _ = self.decoder_stack.forward(
             x, affine=None, affine_mask=None, sequence_id=sequence_id, chain_id=chain_id
         )
 

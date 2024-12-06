@@ -10,7 +10,7 @@ from attr import asdict, define
 import esm.utils.constants.api as C
 from esm.tokenization import (
     TokenizerCollectionProtocol,
-    get_model_tokenizers,
+    get_esm3_model_tokenizers,
 )
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
@@ -226,7 +226,7 @@ class ESMProteinTensor(ProteinType):
         device: torch.device | str = "cpu",
     ) -> ESMProteinTensor:
         if tokenizers is None:
-            tokenizers = get_model_tokenizers(ESM3_OPEN_SMALL)
+            tokenizers = get_esm3_model_tokenizers(ESM3_OPEN_SMALL)
 
         return ESMProteinTensor(
             sequence=encoding.get_default_sequence_tokens(

@@ -10,12 +10,12 @@ from evolutionaryscale.utils.env import ModelName
 from evolutionaryscale.utils.remote_inference.api_v1 import (
     ESM3RemoteModelInferenceClient,
 )
-from projects.forge.fastapi.utils.model import _load_esm3
+from projects.forge.fastapi.utils.model import _load_esm_model
 
 
 @pytest.fixture()
 def esm3_remote_inference_client():
-    model = _load_esm3(ModelName.ESM3_TINY_DEV, distributed_model=False)
+    model = _load_esm_model(ModelName.ESM3_TINY_DEV, distributed_model=False)
     client = ESM3RemoteModelInferenceClient(
         model,
         tokenizers=model.tokenizers,

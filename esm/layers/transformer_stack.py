@@ -66,7 +66,7 @@ class TransformerStack(nn.Module):
         affine: Affine3D | None = None,
         affine_mask: torch.Tensor | None = None,
         chain_id: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass of the TransformerStack.
 
@@ -85,6 +85,9 @@ class TransformerStack(nn.Module):
         *batch_dims, _ = x.shape
         if chain_id is None:
             chain_id = torch.ones(size=batch_dims, dtype=torch.int64, device=x.device)
+        hiddens = []
         for block in self.blocks:
             x = block(x, sequence_id, affine, affine_mask, chain_id)
-        return self.norm(x), x
+            hiddens.append(x)
+        hiddens = torch.stack(hiddens, dim=0)
+        return self.norm(x), x, hiddens

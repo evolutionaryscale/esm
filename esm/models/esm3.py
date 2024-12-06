@@ -376,7 +376,9 @@ class ESM3(nn.Module, ESM3InferenceClient):
             function_tokens,
             residue_annotation_tokens,
         )
-        x, embedding = self.transformer(x, sequence_id, affine, affine_mask, chain_id)
+        x, embedding, _ = self.transformer(
+            x, sequence_id, affine, affine_mask, chain_id
+        )
         return self.output_heads(x, embedding)
 
     # The following methods are for the ESM3InferenceClient interface
