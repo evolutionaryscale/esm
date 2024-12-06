@@ -21,6 +21,7 @@ from esm.tokenization import EsmSequenceTokenizer
 from esm.utils import encoding
 from esm.utils.constants.models import ESMC_600M
 from esm.utils.decoding import decode_sequence
+from esm.utils.misc import stack_variable_length_tensors
 from esm.utils.sampling import _BatchedESMProteinTensor
 
 
@@ -28,6 +29,7 @@ from esm.utils.sampling import _BatchedESMProteinTensor
 class ESMCOutput:
     sequence_logits: torch.Tensor
     embeddings: torch.Tensor | None
+    hidden_states: torch.Tensor | None
 
 
 class ESMC(nn.Module, ESMCInferenceClient):
@@ -73,6 +75,23 @@ class ESMC(nn.Module, ESMCInferenceClient):
     def raw_model(self):
         return self
 
+    def _tokenize(self, sequence: list[str]) -> torch.Tensor:
+        pad = self.tokenizer.pad_token_id
+        assert pad is not None
+        return stack_variable_length_tensors(
+            [
+                encoding.tokenize_sequence(x, self.tokenizer, add_special_tokens=True)
+                for x in sequence
+            ],
+            constant_value=pad,
+        ).to(next(self.parameters()).device)
+
+    def _detokenize(self, sequence: torch.Tensor) -> list[str]:
+        pad = self.tokenizer.pad_token_id
+        assert pad is not None
+        assert sequence.ndim == 2
+        return [decode_sequence(x[x != pad][1:-1], self.tokenizer) for x in sequence]
+
     def forward(
         self,
         sequence_tokens: torch.Tensor | None = None,
@@ -93,9 +112,11 @@ class ESMC(nn.Module, ESMCInferenceClient):
             sequence_id = sequence_tokens == self.tokenizer.pad_token_id
 
         x = self.embed(sequence_tokens)
-        x, _ = self.transformer(x, sequence_id=sequence_id)
+        x, _, hiddens = self.transformer(x, sequence_id=sequence_id)
         sequence_logits = self.sequence_head(x)
-        output = ESMCOutput(sequence_logits=sequence_logits, embeddings=x)
+        output = ESMCOutput(
+            sequence_logits=sequence_logits, embeddings=x, hidden_states=hiddens
+        )
         return output
 
     def encode(self, input: ESMProtein) -> ESMProteinTensor:
@@ -103,9 +124,7 @@ class ESMC(nn.Module, ESMCInferenceClient):
         sequence_tokens = None
 
         if input.sequence is not None:
-            sequence_tokens = encoding.tokenize_sequence(
-                input.sequence, self.tokenizer, add_special_tokens=True
-            )
+            sequence_tokens = self._tokenize([input.sequence])[0]
         return ESMProteinTensor(sequence=sequence_tokens).to(
             next(self.parameters()).device
         )
@@ -114,7 +133,7 @@ class ESMC(nn.Module, ESMCInferenceClient):
         input = attr.evolve(input)  # Make a copy
 
         assert input.sequence is not None
-        sequence = decode_sequence(input.sequence[1:-1], self.tokenizer)
+        sequence = self._detokenize(input.sequence)[0]
 
         return ESMProtein(sequence=sequence)
 

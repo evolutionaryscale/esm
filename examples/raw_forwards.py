@@ -9,7 +9,7 @@ from esm.pretrained import (
     ESM3_structure_decoder_v0,
     ESM3_structure_encoder_v0,
 )
-from esm.tokenization import get_model_tokenizers
+from esm.tokenization import get_esm3_model_tokenizers
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer as EsmFunctionTokenizer,
 )
@@ -50,7 +50,7 @@ def inverse_folding_example():
 
 @torch.no_grad()
 def conditioned_prediction_example():
-    tokenizers = get_model_tokenizers()
+    tokenizers = get_esm3_model_tokenizers()
 
     model = ESM3_sm_open_v0("cuda")
 
