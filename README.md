@@ -1,10 +1,14 @@
-# Table of Contents
+- [Installation ](#installation-)
+- [ESM C ](#esm-c-)
+  - [Using ESM C 300M and 600M via GitHub](#using-esm-c-300m-and-600m-via-github)
+  - [Using ESM C 6B via Forge API](#using-esm-c-6b-via-forge-api)
+  - [Using ESM C 6B via SageMaker](#using-esm-c-6b-via-sagemaker)
+- [ESM 3  ](#esm-3--)
+  - [Quickstart for ESM3-open](#quickstart-for-esm3-open)
+  - [Forge: Access to larger ESM3 models](#forge-access-to-larger-esm3-models)
+- [Responsible Development ](#responsible-development-)
+- [Licenses  ](#licenses--)
 
-1. [Installation](#installation)
-2. [ESM C](#esm-c)
-3. [ESM 3](#esm3)
-4. [Responsible Development](#responsible-development)
-5. [License](#licenses)
 
 ## Installation <a name="installation"></a>
 
@@ -47,7 +51,6 @@ from esm.sdk.api import ESMProtein, LogitsConfig
 
 # Apply for forge access and get an access token
 forge_client = ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token="<your forge token>")
-protein = ESMProtein(sequence="AAAAA")
 protein_tensor = forge_client.encode(protein)
 logits_output = forge_client.logits(
    protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
@@ -59,12 +62,41 @@ print(logits_output.logits, logits_output.embeddings)
 
 ESM C models are also available on Amazon SageMaker. They function similarly to the ESM3 model family, and you can refer to the sample notebooks provided in this repository for examples.
 
+You'll need an admin AWS access to an AWS account to follow these instructions. To deploy, first we need to deploy the AWS package:
+
+1. Find the ESM C model version you want to subscribe to. All of our offerings are visible [here](https://aws.amazon.com/marketplace/seller-profile?id=seller-iw2nbscescndm).
+2. Click the name of the model version you are interested in, review pricing information and the end user license agreement (EULA), then click "Continue to Subscribe".
+3. Once you have subscribed, you should be able to see our model under your [marketplace subscriptions](https://us-east-1.console.aws.amazon.com/marketplace/home#/subscriptions).
+4. Click the product name and then from the "Actions" dropdown select "Configure".
+5. You will next see the "Configure and Launch" UI. There are multiple deployment paths - we recommend using "AWS CloudFormation".
+6. The default value for "Service Access" may or may not work. We recommend clicking "Create and use a new service role".
+7. Click "Launch CloudFormation Template".  This takes 15 to 25 minutes depending on model size.
+8. On the "Quick create stack" page, ensure the stack name and endpoint names are not already used. You can check existing stack names [here](https://console.aws.amazon.com/cloudformation/home/stacks) and existing endpoint names [here](https://us-east-1.console.aws.amazon.com/sagemaker/home?region=us-east-1#/endpoints).
+
+The Sagemaker deployment of the model now lives on a dedicated GPU instance inside your AWS environment, and will be billed directly to your AWS account.
+Make sure to remember to shut down the instance after you stop using it. Find the CloudFormation stack you created [here](https://us-east-1.console.aws.amazon.com/cloudformation/home), select it, and then click "Delete" to clean up all resources.
+
 After creating the endpoint, you can create a sagemaker client and use it the same way as a forge client. They share the same API.
 
+Ensure that the code below runs in an environment that has AWS credentials available for the account which provisioned SageMaker resources.  Learn more about general AWS credential options [here](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html#cli-chap-authentication-precedence).
+
 ```py
+from esm.sdk.sagemaker import ESM3SageMakerClient
+from esm.sdk.api import ESMProtein, LogitsConfig
+
 sagemaker_client = ESM3SageMakerClient(
-   endpoint_name=SAGE_ENDPOINT_NAME, model=<model_name>
+   # E.g. "Endpoint-ESMC-6B-1"
+   endpoint_name=SAGE_ENDPOINT_NAME,
+   # E.g. "esmc-6b-2024-12". Same model names as in Forge.
+   model=MODEL_NAME,
 )
+
+protein = ESMProtein(sequence="AAAAA")
+protein_tensor = sagemaker_client.encode(protein)
+logits_output = sagemaker_client.logits(
+   protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+)
+print(logits_output.logits, logits_output.embeddings)
 ```
 
 ## ESM 3  <a name="esm3"></a>
