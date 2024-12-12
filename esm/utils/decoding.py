@@ -72,10 +72,10 @@ def decode_protein_tensor(
     if input.sequence is not None:
         sequence = decode_sequence(input.sequence, tokenizers.sequence)
 
-    plddt, ptm = None, None
+    plddt, ptm, pae = None, None, None
     if input.structure is not None:
         # Note: We give priority to the structure tokens over the coordinates when decoding
-        coordinates, plddt, ptm = decode_structure(
+        coordinates, plddt, ptm, pae = decode_structure(
             structure_tokens=input.structure,
             structure_decoder=structure_token_decoder,
             structure_tokenizer=tokenizers.structure,
@@ -115,6 +115,7 @@ def decode_protein_tensor(
         coordinates=coordinates,
         plddt=plddt,
         ptm=ptm,
+        pae=pae,
         potential_sequence_of_concern=input.potential_sequence_of_concern,
     )
 
