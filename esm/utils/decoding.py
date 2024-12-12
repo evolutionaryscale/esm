@@ -164,20 +164,17 @@ def decode_structure(
     ]  # Remove BOS and EOS tokens
     bb_coords = bb_coords.detach().cpu()
 
-    if "plddt" in decoder_output:
-        plddt = decoder_output["plddt"][0, 1:-1]
-        plddt = plddt.detach().cpu()
-    else:
-        plddt = None
+    plddt = decoder_output.get("plddt", None)
+    if plddt is not None:
+        plddt = plddt[0, 1:-1].detach().cpu()
 
-    if "ptm" in decoder_output:
-        ptm = decoder_output["ptm"]
-    else:
-        ptm = None
+    ptm = decoder_output.get("ptm", None)
+
+    pae = decoder_output.get("predicted_aligned_error", None)
 
     chain = ProteinChain.from_backbone_atom_coordinates(bb_coords, sequence=sequence)
     chain = chain.infer_oxygen()
-    return torch.tensor(chain.atom37_positions), plddt, ptm
+    return torch.tensor(chain.atom37_positions), plddt, ptm, pae
 
 
 def decode_secondary_structure(
