@@ -53,6 +53,9 @@ def _trim_sequence_tensor_dataclass(o: Any, sequence_len: int):
         elif isinstance(v, torch.Tensor):
             # Trim padding.
             sliced[k] = v[:, :sequence_len]
+        elif isinstance(v, tuple) and all(isinstance(t, torch.Tensor) for t in v):
+            # Trim padding for a list of tensors
+            sliced[k] = [t[:, :sequence_len] for t in v]
         elif attr.has(v.__class__):
             # Recursively slice the child attribute.
             sliced[k] = _trim_sequence_tensor_dataclass(v, sequence_len)

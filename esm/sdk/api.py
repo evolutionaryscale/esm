@@ -180,9 +180,6 @@ class ESMProteinTensor(ProteinType):
     # Such sequences may not go through standard safety filter for approved users.
     # Reach out if interested in using this.
     potential_sequence_of_concern: bool = False
-    # Control vectors are vectors added to each layer of the model to nudge hidden states to the desired direction.
-    # len(control_vectors)  == number of blocks in the model. Each vector in the list have the shape of (batch size, sequence length, hidden dim)
-    # so it can be added to the corresponding layer in the model
 
     def _detect_attribute(self, func, msg):
         mapped = {
@@ -349,6 +346,7 @@ class LogitsConfig:
 
     # Embeddings.
     return_embeddings: bool = False
+    return_hidden_states: bool = False
 
 
 @define
@@ -360,6 +358,7 @@ class LogitsOutput:
     # It's not a categorical distribution, but instead a bernoulli, so
     # softmax across the last dimension is _wrong_
     residue_annotation_logits: torch.Tensor | None = None
+    hidden_states: torch.Tensor | None = None
 
 
 @define
