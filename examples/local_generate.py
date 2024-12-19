@@ -102,12 +102,16 @@ def main(client: ESM3InferenceClient):
     protein.function_annotations = None
     protein.sasa = None
     protein_tensor = client.encode(protein)
-    logits_output = client.logits(protein_tensor, LogitsConfig(sequence=True))
+    logits_output = client.logits(
+        protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+    )
     assert isinstance(
         logits_output, LogitsOutput
     ), f"LogitsOutput was expected but got {logits_output}"
     assert (
-        logits_output.logits is not None and logits_output.logits.sequence is not None
+        logits_output.logits is not None
+        and logits_output.logits.sequence is not None
+        and logits_output.embeddings is not None
     )
 
     # Chain of Thought (Function -> Secondary Structure -> Structure -> Sequence)

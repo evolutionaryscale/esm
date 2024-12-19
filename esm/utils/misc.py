@@ -1,11 +1,13 @@
 import os
 from collections import defaultdict
-from typing import ContextManager, Sequence, TypeVar
+from io import BytesIO
+from typing import Any, ContextManager, Sequence, TypeVar
 from warnings import warn
 
 import huggingface_hub
 import numpy as np
 import torch
+import zstd
 
 from esm.utils.constants.esm3 import CHAIN_BREAK_STR
 from esm.utils.types import FunctionAnnotation
@@ -299,3 +301,9 @@ def get_chainbreak_boundaries_from_sequence(sequence: Sequence[str]) -> np.ndarr
     assert len(chain_boundaries) % 2 == 0
     chain_boundaries = np.array(chain_boundaries).reshape(-1, 2)
     return chain_boundaries
+
+
+def deserialize_tensors(b: bytes) -> Any:
+    buf = BytesIO(zstd.ZSTD_uncompress(b))
+    d = torch.load(buf, map_location="cpu", weights_only=False)
+    return d

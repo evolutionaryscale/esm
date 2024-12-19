@@ -62,10 +62,14 @@ def ESM3_function_decoder_v0(device: torch.device | str = "cpu"):
     return model
 
 
-def ESMC_300M_202412(device: torch.device | str = "cpu"):
+def ESMC_300M_202412(device: torch.device | str = "cpu", use_flash_attn: bool = True):
     with torch.device(device):
         model = ESMC(
-            d_model=960, n_heads=15, n_layers=30, tokenizer=get_esmc_model_tokenizers()
+            d_model=960,
+            n_heads=15,
+            n_layers=30,
+            tokenizer=get_esmc_model_tokenizers(),
+            use_flash_attn=use_flash_attn,
         ).eval()
     state_dict = torch.load(
         data_root("esmc-300") / "data/weights/esmc_300m_2024_12_v0.pth",
@@ -76,10 +80,14 @@ def ESMC_300M_202412(device: torch.device | str = "cpu"):
     return model
 
 
-def ESMC_600M_202412(device: torch.device | str = "cpu"):
+def ESMC_600M_202412(device: torch.device | str = "cpu", use_flash_attn: bool = True):
     with torch.device(device):
         model = ESMC(
-            d_model=1152, n_heads=18, n_layers=36, tokenizer=get_esmc_model_tokenizers()
+            d_model=1152,
+            n_heads=18,
+            n_layers=36,
+            tokenizer=get_esmc_model_tokenizers(),
+            use_flash_attn=use_flash_attn,
         ).eval()
     state_dict = torch.load(
         data_root("esmc-600") / "data/weights/esmc_600m_2024_12_v0.pth",
