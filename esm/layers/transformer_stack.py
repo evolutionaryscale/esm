@@ -36,6 +36,7 @@ class TransformerStack(nn.Module):
         qk_layernorm: bool = True,
         ffn_type: str = "swiglu",  # swiglu | gelu
         expansion_ratio: float = 8 / 3,
+        use_flash_attn: bool = False,
     ):
         super().__init__()
         self.blocks = nn.ModuleList(
@@ -45,6 +46,7 @@ class TransformerStack(nn.Module):
                     n_heads,
                     v_heads=v_heads,
                     use_geom_attn=i < n_layers_geom,
+                    use_flash_attn=use_flash_attn,
                     residue_scaling_factor=(
                         math.sqrt(n_layers / 36) if scale_residue else 1.0
                     ),
@@ -66,7 +68,7 @@ class TransformerStack(nn.Module):
         affine: Affine3D | None = None,
         affine_mask: torch.Tensor | None = None,
         chain_id: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
         """
         Forward pass of the TransformerStack.
 
@@ -89,5 +91,4 @@ class TransformerStack(nn.Module):
         for block in self.blocks:
             x = block(x, sequence_id, affine, affine_mask, chain_id)
             hiddens.append(x)
-        hiddens = torch.stack(hiddens, dim=0)
         return self.norm(x), x, hiddens
