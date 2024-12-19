@@ -25,6 +25,13 @@ from typing import Tuple
 import torch
 from einops import rearrange, repeat
 
+try:
+    from flash_attn.ops.triton.rotary import (  # type:ignore
+        apply_rotary as apply_triton_rotary,
+    )
+except ImportError:
+    apply_triton_rotary = None
+
 
 def rotate_half(x, interleaved=False):
     if not interleaved:
@@ -219,3 +226,36 @@ class RotaryEmbedding(torch.nn.Module):
             )  # type: ignore
         else:
             assert False
+
+
+class TritonRotaryEmbedding(RotaryEmbedding):
+    def forward(self, qkv: torch.Tensor, cu_seqlens, max_seqlen) -> torch.Tensor:
+        """
+        qkv: (n, 3, nheads, headdim)
+        cu_seqlens: cumulative sequence lengths
+        max_seqlen: max sequence length
+        """
+        self._update_cos_sin_cache(max_seqlen, device=qkv.device, dtype=qkv.dtype)
+        assert self._cos_cached is not None
+        assert self._sin_cached is not None
+
+        assert apply_triton_rotary is not None
+        # In-place modification
+        apply_triton_rotary(
+            qkv[:, 0],
+            self._cos_cached,
+            self._sin_cached,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            inplace=True,
+        )
+        apply_triton_rotary(
+            qkv[:, 1],
+            self._cos_cached,
+            self._sin_cached,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            inplace=True,
+        )
+
+        return qkv

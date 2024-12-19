@@ -1,30 +1,42 @@
+from local_generate import get_sample_protein
+
 from esm.models.esmc import ESMC
-from esm.sdk.api import ESMCInferenceClient, ESMProtein, LogitsConfig, LogitsOutput
+from esm.sdk.api import (
+    ESMCInferenceClient,
+    LogitsConfig,
+    LogitsOutput,
+)
 
 
 def main(client: ESMCInferenceClient):
     # ================================================================
     # Example usage: one single protein
     # ================================================================
-    protein = ESMProtein(sequence="AAAAA")
+    protein = get_sample_protein()
+    protein.coordinates = None
+    protein.function_annotations = None
+    protein.sasa = None
 
     # Use logits endpoint. Using bf16 for inference optimization
     protein_tensor = client.encode(protein)
     output = client.logits(
-        protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
+        protein_tensor,
+        LogitsConfig(sequence=True, return_embeddings=True, return_hidden_states=True),
     )
     assert isinstance(
         output, LogitsOutput
     ), f"LogitsOutput was expected but got {output}"
     assert output.logits is not None and output.logits.sequence is not None
-    assert output.embeddings is not None and output.embeddings is not None
+    assert output.embeddings is not None
+    assert output.hidden_states is not None
     print(
-        f"Client returned logits with shape: {output.logits.sequence.shape} and embeddings with shape: {output.embeddings.shape}"
+        f"Client returned logits with shape: {output.logits.sequence.shape}, embeddings with shape: {output.embeddings.shape}, and hidden states with shape {output.hidden_states.shape}"
     )
 
 
 def raw_forward(model: ESMC):
-    protein = ESMProtein(sequence="AAAAA")
+    protein = get_sample_protein()
+    assert protein.sequence is not None
     sequences = [protein.sequence, protein.sequence]
 
     # ================================================================

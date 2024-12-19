@@ -1,15 +1,18 @@
-- [Installation ](#installation)
-- [ESM C](#esm-c)
-  - [ESM C 300M and 600M via GitHub](#esm-c-github)
-  - [ESM C via Forge API for Free Non-Commercial Use](#esm-c-forge)
-  - [ESM C via SageMaker for Commercial Use](#esm-c-sagemaker)
-  - [ESM C Example Usage](#esmc-example)
-- [ESM 3](#esm3)
-  - [Quickstart for ESM3-open](#esm3-quickstart)
-  - [Forge: Access to larger ESM3 models](#esm3-forge)
-  - [ESM 3 Example Usage](#esm3-example)
-- [Responsible Development ](#responsible-development)
-- [Licenses](#licenses)
+- [Installation ](#installation-)
+- [ESM C ](#esm-c-)
+  - [ESM C Local Models via GitHub ](#esm-c-local-models-via-github-)
+  - [Using ESM C 6B via Forge API](#using-esm-c-6b-via-forge-api)
+  - [ESM C via Forge API for Free Non-Commercial Use  ](#esm-c-via-forge-api-for-free-non-commercial-use--)
+  - [ESM C via SageMaker for Commercial Use  ](#esm-c-via-sagemaker-for-commercial-use--)
+  - [ESM C Example Usage](#esm-c-example-usage)
+- [ESM 3  ](#esm-3--)
+  - [Quickstart for ESM3-open ](#quickstart-for-esm3-open-)
+  - [EvolutionaryScale Forge: Access to larger ESM3 models](#evolutionaryscale-forge-access-to-larger-esm3-models)
+  - [ESM3 Example Usage](#esm3-example-usage)
+- [Responsible Development ](#responsible-development-)
+- [Licenses  ](#licenses--)
+  - [How can I access the models and which licenses apply?](#how-can-i-access-the-models-and-which-licenses-apply)
+  - [What changed with the release of ESM C?](#what-changed-with-the-release-of-esm-c)
 
 
 ## Installation <a name="installation"></a>
@@ -46,6 +49,16 @@ logits_output = client.logits(
 print(logits_output.logits, logits_output.embeddings)
 ```
 
+To use Flash Attention with the open weights:
+
+Simply install flash-attn package, which will enable Flash Attention automatically:
+```
+pip install flash-attn --no-build-isolation
+```
+
+You can also disable flash-attn by passing ``use_flash_attn=False`` to utils like ``ESMC_300M_202412``.
+
+### Using ESM C 6B via Forge API
 ### ESM C via Forge API for Free Non-Commercial Use  <a name="esm-c-forge"></a>
 
 The ESM C model family, including ESMC 6B, are accessible via EvolutionaryScale Forge for free [non-commercial use](#licenses).
@@ -235,13 +248,13 @@ The models can be accessed in three different ways, each with its own licensing 
 1. **Code and weights** via GitHub and HuggingFace are available under either a [non-commercial](https://www.evolutionaryscale.ai/policies/cambrian-non-commercial-license-agreement) (ESM C 600M, ESM3-small-open) or an [open license](https://www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) (codebase, ESM C 300M).
     1. **Building with ESM encouraged**: You can use embeddings, model predictions, fine-tune the models and use components of both the models and code. We strongly encourage anyone to build on ESM C and ESM3! Just remember to maintain the same license terms and release under the ESM name.
 2. **Free non-commercial inference API** via Forge. All models are available this way, with free credits granted to students and researchers. We want to enable academics under [non-commercial Terms of Use](https://www.evolutionaryscale.ai/policies/terms-of-use), which mirrors the non-commercial license.
-3. **Paid commercial Inference API** for commercial use via SageMaker (Forge coming soon). All ESM C models are available this way to commercial entities for commercial use under a [clickthrough license agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement) with few restrictions. 
+3. **Paid commercial Inference API** for commercial use via SageMaker (Forge coming soon). All ESM C models are available this way to commercial entities for commercial use under a [clickthrough license agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement) with few restrictions.
     1. In broad strokes: standard commercial use like developing molecules and developing downstream ML models and methods with the model is allowed, while training competing models on the API outputs is not.
-    2. Note: For ESM3 commercial use, reach out to [bd@evolutionaryscale.ai](mailto:bd@evolutionaryscale.ai) 
+    2. Note: For ESM3 commercial use, reach out to [bd@evolutionaryscale.ai](mailto:bd@evolutionaryscale.ai)
 
 ### What changed with the release of ESM C?
 
-We introduced a [clickthrough license agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement) to enable frictionless commercial use of ESM C. 
+We introduced a [clickthrough license agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement) to enable frictionless commercial use of ESM C.
 
 We introduced the new [Cambrian Open License](https://www.evolutionaryscale.ai/policies/cambrian-open-license-agreement) for ESM C 300M, and at the same time moved all code in the [`esm` repo](https://github.com/evolutionaryscale/esm) under that permissive license.
 
