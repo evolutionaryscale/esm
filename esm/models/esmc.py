@@ -7,6 +7,15 @@ import torch
 import torch.nn as nn
 from attr import dataclass
 
+try:
+    from flash_attn.bert_padding import pad_input, unpad_input  # type:ignore
+
+    is_flash_attn_available = True
+except ImportError:
+    pad_input = None
+    unpad_input = None
+    is_flash_attn_available = False
+
 from esm.layers.regression_head import RegressionHead
 from esm.layers.transformer_stack import TransformerStack
 from esm.sdk.api import (
@@ -43,13 +52,26 @@ class ESMC(nn.Module, ESMCInferenceClient):
     """
 
     def __init__(
-        self, d_model: int, n_heads: int, n_layers: int, tokenizer: EsmSequenceTokenizer
+        self,
+        d_model: int,
+        n_heads: int,
+        n_layers: int,
+        tokenizer: EsmSequenceTokenizer,
+        use_flash_attn: bool = True,
     ):
         super().__init__()
         self.embed = nn.Embedding(64, d_model)
+
+        self._use_flash_attn = is_flash_attn_available and use_flash_attn
         self.transformer = TransformerStack(
-            d_model, n_heads, None, n_layers, n_layers_geom=0
+            d_model,
+            n_heads,
+            None,
+            n_layers,
+            n_layers_geom=0,
+            use_flash_attn=self._use_flash_attn,
         )
+
         self.sequence_head = RegressionHead(d_model, 64)
         self.tokenizer = tokenizer
 
@@ -109,10 +131,41 @@ class ESMC(nn.Module, ESMCInferenceClient):
 
         """
         if sequence_id is None:
-            sequence_id = sequence_tokens == self.tokenizer.pad_token_id
+            # For EMSC, a boolean mask is created in place of sequence_id if not specified.
+            sequence_id = sequence_tokens != self.tokenizer.pad_token_id
 
         x = self.embed(sequence_tokens)
+
+        B, L = x.shape[:2]
+
+        # If sequence_id looks like a mask.
+        if self._use_flash_attn:
+            assert (
+                sequence_id.dtype == torch.bool
+            ), "sequence_id must be a boolean mask if Flash Attention is used"
+            assert sequence_id.shape == (B, L)
+            assert unpad_input is not None
+            x, indices, _, _, _ = unpad_input(  # type: ignore
+                x, sequence_id
+            )
+        else:
+            indices = None
+
         x, _, hiddens = self.transformer(x, sequence_id=sequence_id)
+
+        if self._use_flash_attn:
+            assert indices is not None
+            assert pad_input is not None
+            x = pad_input(x, indices, B, L)  # Back to [B, L, D]
+            hiddens = [
+                # Back to [[B, L, D], ...]
+                pad_input(h, indices, B, L)
+                for h in hiddens
+            ]
+
+        # Stack hidden states into a [n_layers, B, L, D] matrix.
+        hiddens = torch.stack(hiddens, dim=0)  # type: ignore
+
         sequence_logits = self.sequence_head(x)
         output = ESMCOutput(
             sequence_logits=sequence_logits, embeddings=x, hidden_states=hiddens
@@ -161,4 +214,5 @@ class ESMC(nn.Module, ESMCInferenceClient):
                 sequence=output.sequence_logits if config.sequence else None
             ),
             embeddings=output.embeddings if config.return_embeddings else None,
+            hidden_states=output.hidden_states if config.return_hidden_states else None,
         )
