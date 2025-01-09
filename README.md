@@ -222,7 +222,7 @@ Let's explore some more advanced prompting with the help of our [notebooks and s
 We also provide example scripts that show common workflows under `examples/`:
 
 - [local_generate.py](./examples/local_generate.py) shows how simple and elegant common tasks are: it shows folding, inverse folding and chain of thought generation, all by calling just `model.generate()` for iterative decoding.
-- [seqfun_struct.py](./examples/seqfun_struct.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
+- [raw_forwards.py](./examples/raw_forwards.py) shows direct use of the model as a standard pytorch model with a simple model `forward` call.
 
 ## Responsible Development <a name="responsible-development"></a>
 
