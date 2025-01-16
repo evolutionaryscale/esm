@@ -256,6 +256,14 @@ def merge_annotations(
     return merged
 
 
+def replace_inf(data):
+    if data is None:
+        return None
+    array = np.array(data, dtype=np.float32, copy=False)
+    array = np.where(np.isinf(array), -1, array)
+    return array.tolist()
+
+
 def maybe_tensor(x, convert_none_to_nan: bool = False) -> torch.Tensor | None:
     if x is None:
         return None

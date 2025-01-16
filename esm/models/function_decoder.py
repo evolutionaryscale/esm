@@ -268,9 +268,18 @@ class FunctionTokenDecoder(nn.Module):
         keyword_logits[~where_decode, :] = -torch.inf
         if decode_keywords:
             keyword_preds = F.sigmoid(keyword_logits) >= keywords_threshold
-            outputs["function_keywords"] = self._preds_to_keywords(
-                keyword_preds.detach().cpu().numpy()
+            keywords = self._preds_to_keywords(keyword_preds.detach().cpu().numpy())
+            keywords = merge_annotations(
+                keywords, merge_gap_max=annotation_gap_merge_max
             )
+            if annotation_min_length is not None:
+                keywords = [
+                    annotation
+                    for annotation in keywords
+                    if annotation.end - annotation.start + 1 >= annotation_min_length
+                ]
+
+            outputs["function_keywords"] = keywords
 
         return outputs
 

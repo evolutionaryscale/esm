@@ -1,11 +1,15 @@
+import os
+
 import torch
 
 from esm.models.esm3 import ESM3
+from esm.sdk import client
 from esm.sdk.api import (
     ESM3InferenceClient,
     ESMProtein,
     ESMProteinError,
     ESMProteinTensor,
+    ForwardAndSampleOutput,
     GenerationConfig,
     LogitsConfig,
     LogitsOutput,
@@ -195,4 +199,12 @@ def main(client: ESM3InferenceClient):
 
 
 if __name__ == "__main__":
-    main(ESM3.from_pretrained("esm3_sm_open_v1"))
+    if os.environ.get("ESM_API_KEY", ""):
+        print("ESM_API_KEY found. Trying to use model from Forge...")
+        main(client())
+    else:
+        print("No ESM_API_KEY found. Trying to load model locally...")
+        print(
+            "TO try this script with a Forge API, please run ESM_API_KEY=your_api_key python esm3.py"
+        )
+        main(ESM3.from_pretrained("esm3_sm_open_v1"))

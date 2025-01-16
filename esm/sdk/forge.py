@@ -1,5 +1,5 @@
-import asyncio
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from typing import Sequence
 from urllib.parse import urljoin
@@ -95,7 +95,8 @@ class SequenceStructureForgeInferenceClient:
             return e
 
         return ESMProtein(
-            coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True)
+            sequence=sequence,
+            coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True),
         )
 
     def inverse_fold(
@@ -228,23 +229,18 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         """Forge supports auto-batching. So batch_generate() for the Forge client
         is as simple as running a collection of generate() in parallel using asyncio.
         """
-        loop = asyncio.get_event_loop()
-
-        async def _async_generate():
+        with ThreadPoolExecutor() as executor:
             futures = [
-                loop.run_in_executor(None, self.generate, protein, config)
+                executor.submit(self.generate, protein, config)
                 for protein, config in zip(inputs, configs)
             ]
-            return await asyncio.gather(*futures, return_exceptions=True)
-
-        results = loop.run_until_complete(_async_generate())
-
-        def _capture_exception(r):
-            if isinstance(r, BaseException) and not isinstance(r, ESMProteinError):
-                return ESMProteinError(500, str(r))
-            return r
-
-        return [_capture_exception(r) for r in results]
+            results = []
+            for future in futures:
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    results.append(ESMProteinError(500, str(e)))
+        return results
 
     def __generate_protein(
         self, input: ESMProtein, config: GenerationConfig
@@ -530,6 +526,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "residue_annotations": config.residue_annotations,
             "return_embeddings": config.return_embeddings,
             "return_hidden_states": config.return_hidden_states,
+            "ith_hidden_layer": config.ith_hidden_layer,
         }
 
         request = {"model": self.model, "inputs": req, "logits_config": logits_config}
