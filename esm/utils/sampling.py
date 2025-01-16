@@ -181,7 +181,6 @@ def sample_logits(
         logits = top_p_logits(logits, top_p=top_p)
 
     temperature = _tensorize_like(temperature, logits)
-
     batch_dims = logits.size()[:-1]
     logits = logits.reshape(-1, logits.shape[-1])
 
@@ -189,7 +188,7 @@ def sample_logits(
     # the /logits endpoint should receive unmodified logits
     if mask_logits_of_invalid_ids:
         mask = torch.ones_like(logits, dtype=torch.bool)
-        mask[:, valid_ids] = False
+        mask[..., valid_ids] = False
         logits[mask] = -torch.inf
 
     if torch.all(temperature == 0):
@@ -279,7 +278,7 @@ def sample_sasa_logits(
     # the /logits endpoint should receive unmodified logits
     if mask_logits_of_invalid_ids:
         mask = torch.ones_like(logits, dtype=torch.bool)
-        mask[:, valid_ids] = False
+        mask[..., valid_ids] = False
         logits[mask] = -torch.inf
 
     sasa_probs = torch.nn.functional.softmax(logits, dim=-1)

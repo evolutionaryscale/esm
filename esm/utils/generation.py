@@ -604,7 +604,10 @@ def _sample_per_prompt(
             tokens_dir["sasa"] = sasa_value
 
             probs = sasa_logits.softmax(dim=-1)
-            entropy = -(probs * sasa_logits.log_softmax(-1)).sum(-1)
+            # Note(tjia): sasa_logits can have -inf because of invalid ids, so
+            # probs * sasa_logits.log_softmax(-1) is nan. We need to set
+            # those positions to 0 to get the correct entropy value
+            entropy = -(torch.nan_to_num(probs * sasa_logits.log_softmax(-1))).sum(-1)
 
             track_sampling_metadata_dir["sasa"] = {"entropy": entropy}
 

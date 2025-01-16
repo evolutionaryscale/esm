@@ -29,6 +29,13 @@ def main(client: ESMCInferenceClient):
         f"Client returned logits with shape: {output.logits.sequence.shape}, embeddings with shape: {output.embeddings.shape}, and hidden states with shape {output.hidden_states.shape}"
     )
 
+    # request a specific hidden layer.
+    output = client.logits(
+        protein_tensor, LogitsConfig(return_hidden_states=True, ith_hidden_layer=1)
+    )
+    assert output.hidden_states is not None
+    print(f"Client returned hidden states with shape {output.hidden_states.shape}")
+
 
 def raw_forward(model: ESMC):
     protein = ESMProtein(sequence="AAAAA")
