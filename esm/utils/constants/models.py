@@ -10,6 +10,10 @@ ESMC_600M = "esmc_600m"
 ESMC_300M = "esmc_300m"
 
 
+def forge_only_return_single_layer_hidden_states(model_name: str):
+    return model_name.startswith("esmc-6b")
+
+
 def model_is_locally_supported(x: str):
     return x in {
         ESM3_OPEN_SMALL,

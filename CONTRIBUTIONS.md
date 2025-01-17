@@ -27,8 +27,7 @@ python -c 'from huggingface_hub import login; login()'
 
 # Ensure package can correctly interact with forge.
 # This will require an API key from forge.evolutionaryscale.ai
-ESM_API_KEY=$ESM_API_KEY PYTHONPATH='.' python examples/forge_generate.py
-
+ESM_API_KEY=$ESM_API_KEY PYTHONPATH='.' python cookbook/snippets/esm3.py
 
 
 ```
@@ -36,21 +35,17 @@ ESM_API_KEY=$ESM_API_KEY PYTHONPATH='.' python examples/forge_generate.py
 1. Ensure the following scripts run without errors. Most have a pip install command installing the published `esm` package - comment this out so your release candidate version is tested and not the already published version.
 
 ```bash
-ESM_API_KEY=$ESM_API_KEY PYTHONPATH='.' python examples/forge_generate.py
+ESM_API_KEY=$ESM_API_KEY PYTHONPATH='.' python cookbook/snippets/esm3.py
 pip install treon
-treon examples/esmprotein.ipynb
-treon examples/gfp_design.ipynb
+treon cookbook/tutorials/1_esmprotein.ipynb
+treon cookbook/tutorials/2_embed.ipynb
+treon cookbook/tutorials/3_gfp_design.ipynb
+treon cookbook/tutorials/4_forge_generate.ipynb
 
 # requires a GPU
-treon examples/generate.ipynb
-python examples/local_generate.py
-python examples/raw_forwards.py
+python cookbook/snippets/esm3.py
+python cookbook/snippets/esmc.py
+python cookbook/local/raw_forwards.py
 
 
 ```
-
-`examples/esmprotein.ipynb` works. Remember to skip running the first cell - it will reinstall stock esm instead of your deployed version.
-
-3. Ensure `examples/generate.ipynb` works. Note this notebook will require a node with a GPU that can fit ESM3 small open.
-
-4. Ensure

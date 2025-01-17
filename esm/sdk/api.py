@@ -348,6 +348,7 @@ class LogitsConfig:
     # Embeddings.
     return_embeddings: bool = False
     return_hidden_states: bool = False
+    ith_hidden_layer: int = -1
 
 
 @define

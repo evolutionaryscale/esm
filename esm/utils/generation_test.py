@@ -15,7 +15,9 @@ from projects.forge.fastapi.utils.model import _load_esm_model
 
 @pytest.fixture()
 def esm3_remote_inference_client():
-    model = _load_esm_model(ModelName.ESM3_TINY_DEV, distributed_model=False)
+    model = _load_esm_model(
+        ModelName.ESM3_TINY_DEV, distributed_model=False, load_function_decoder=False
+    )
     client = ESM3RemoteModelInferenceClient(
         model,
         tokenizers=model.tokenizers,

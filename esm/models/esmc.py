@@ -145,7 +145,7 @@ class ESMC(nn.Module, ESMCInferenceClient):
             ), "sequence_id must be a boolean mask if Flash Attention is used"
             assert sequence_id.shape == (B, L)
             assert unpad_input is not None
-            x, indices, _, _, _ = unpad_input(  # type: ignore
+            x, indices, *_ = unpad_input(  # type: ignore
                 x, sequence_id
             )
         else:
@@ -208,6 +208,12 @@ class ESMC(nn.Module, ESMCInferenceClient):
             else contextlib.nullcontext(),
         ):
             output = self.forward(sequence_tokens=input.sequence)
+        assert output.hidden_states is not None
+        output.hidden_states = (
+            output.hidden_states[config.ith_hidden_layer : config.ith_hidden_layer + 1]
+            if config.ith_hidden_layer != -1
+            else output.hidden_states
+        )
 
         return LogitsOutput(
             logits=ForwardTrackData(
