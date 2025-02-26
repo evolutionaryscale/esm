@@ -1,5 +1,6 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from functools import wraps
 from typing import Sequence
 from urllib.parse import urljoin
@@ -31,6 +32,8 @@ from esm.utils.misc import (
 from esm.utils.sampling import validate_sampling_config
 from esm.utils.types import FunctionAnnotation
 
+skip_retries_var = ContextVar("skip_retries", default=False)
+
 
 def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
     if l is None or len(l) <= 0:
@@ -59,7 +62,7 @@ def log_retry_attempt(retry_state):
 def _validate_protein_tensor_input(input):
     if not isinstance(input, ESMProteinTensor):
         raise ValueError(
-            "Input must be an ESMProteinTensor instance. "
+            f"Input must be an ESMProteinTensor instance, but received {type(input)} instead. "
             "Use encode() API to encode an ESMProtein into ESMProteinTensor."
         )
 
@@ -186,6 +189,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         @wraps(func)
         def wrapper(instance, *args, **kwargs):
+            if skip_retries_var.get():
+                return func(instance, *args, **kwargs)
             retry_decorator = retry(
                 retry=retry_if_result(retry_if_specific_error),
                 wait=wait_exponential(

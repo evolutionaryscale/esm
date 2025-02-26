@@ -154,6 +154,36 @@ print(logits_output.logits, logits_output.embeddings)
 
 Remember to replace `<your forge token>` with your actual Forge access token.
 
+### Forge Batch Executor
+
+For jobs that require processing multiple inputs, the Forge Batch Executor provides a streamlined and way to execute them concurrently and efficiently while respecting rate limits and adapting to request latency.
+
+```py
+from esm.sdk.forge import ESM3ForgeInferenceClient
+from esm.sdk.api import ESMProtein, LogitsConfig
+from esm.sdk import batch_executor
+
+def embed_sequence(client: ESM3ForgeInferenceClient, sequence: str) -> LogitsOutput:
+    protein = ESMProtein(sequence=sequence)
+    protein_tensor = client.encode(protein)
+    if isinstance(protein_tensor, ESMProteinError):
+        raise protein_tensor
+    output = client.logits(protein_tensor, LogitsConfig(sequence=True, return_embeddings=True))
+    return output
+
+sequences = ["A", "AA", "AAA"]
+client =  ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token="<your forge token>")
+
+# Usage Example:
+# To execute a batch job, wrap your function inside the batch executor context manager.
+# Syntax:
+# with batch_executor() as executor:
+#     outputs = executor.execute_batch(user_func=<your_function>, **kwargs)
+
+with batch_executor() as executor:
+    outputs = executor.execute_batch(user_func=embed_sequence, model=client, sequence=sequences)
+```
+
 ### ESM C via SageMaker for Commercial Use  <a name="esm-c-sagemaker"></a>
 
 ESM C models are also available on Amazon SageMaker under the [Cambrian Inference Clickthrough License Agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement).

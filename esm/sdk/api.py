@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from copy import deepcopy
 from typing import List, Sequence
 
 import attr
@@ -108,7 +109,9 @@ class ESMProtein(ProteinType):
             secondary_structure=None,
             sasa=None,
             function_annotations=None,
-            coordinates=torch.tensor(protein_complex.atom37_positions),
+            coordinates=torch.tensor(
+                protein_complex.atom37_positions, dtype=torch.float32
+            ),
         )
 
     def to_pdb(self, pdb_path: PathOrBuffer) -> None:
@@ -163,6 +166,10 @@ class ESMProtein(ProteinType):
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
+
+    def copy(self) -> "ESMProtein":
+        """Create a deep copy of the ESMProtein instance."""
+        return deepcopy(self)
 
 
 @define
@@ -243,6 +250,10 @@ class ESMProteinTensor(ProteinType):
                 length, tokenizers.residue_annotations
             ).to(device),
         )
+
+    def copy(self) -> ESMProteinTensor:
+        """Create a deep copy of the ESMProteinTensor instance."""
+        return deepcopy(self)
 
 
 @define
@@ -338,6 +349,11 @@ class ForwardTrackData:
 class LogitsConfig:
     # Logits.
     sequence: bool = False
+
+    # Note that getting logits for tracks other than sequence
+    # are not supported by Forge today, due to their impractical
+    # data sizes.
+    # These are of course supported when running local OSS models.
     structure: bool = False
     secondary_structure: bool = False
     sasa: bool = False
