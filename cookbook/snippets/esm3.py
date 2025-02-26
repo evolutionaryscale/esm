@@ -1,7 +1,5 @@
 import os
 
-import torch
-
 from esm.models.esm3 import ESM3
 from esm.sdk import client
 from esm.sdk.api import (
@@ -9,7 +7,6 @@ from esm.sdk.api import (
     ESMProtein,
     ESMProteinError,
     ESMProteinTensor,
-    ForwardAndSampleOutput,
     GenerationConfig,
     LogitsConfig,
     LogitsOutput,
@@ -195,7 +192,6 @@ def main(client: ESM3InferenceClient):
 
         else:
             assert isinstance(p, ESMProtein), f"ESMProtein was expected but got {p}"
-
 
 
 if __name__ == "__main__":
