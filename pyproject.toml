@@ -49,3 +49,10 @@ include = ["esm*"]
 
 [tool.setuptools.package-data]
 esm = ["data/*"]
+
+[tool.pixi.project]
+platforms = ["linux-64", "win-64"]
+channels = ["conda-forge"]
+
+[tool.pixi.dependencies]
+cmake = ">=3.31.6,<4"
