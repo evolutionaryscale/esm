@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from evolutionaryscale.models.esm3v2 import Esm3v2
 from esm.sdk.api import (
     ESMProtein,
     ESMProteinTensor,
@@ -18,6 +19,7 @@ def esm3_remote_inference_client():
     model = _load_esm_model(
         ModelName.ESM3_TINY_DEV, distributed_model=False, load_function_decoder=False
     )
+    assert isinstance(model, Esm3v2)
     client = ESM3RemoteModelInferenceClient(
         model,
         tokenizers=model.tokenizers,

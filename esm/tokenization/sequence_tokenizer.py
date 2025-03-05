@@ -73,12 +73,44 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
         return self.cls_token_id
 
     @property
+    def cls_token(self):
+        return self._get_token("cls_token")
+
+    @property
+    def cls_token_id(self):
+        return self._get_token_id(self.cls_token)
+
+    @property
+    def eos_token(self):
+        return self._get_token("eos_token")
+
+    @property
+    def eos_token_id(self):
+        return self._get_token_id(self.eos_token)
+
+    @property
+    def mask_token(self):
+        return self._get_token("mask_token")
+
+    @property
+    def mask_token_id(self):
+        return self._get_token_id(self.mask_token)
+
+    @property
+    def pad_token(self):
+        return self._get_token("pad_token")
+
+    @property
+    def pad_token_id(self):
+        return self._get_token_id(self.pad_token)
+
+    @property
     def chain_break_token(self):
         return self.cb_token
 
     @property
     def chain_break_token_id(self):
-        return self.convert_tokens_to_ids(self.chain_break_token)
+        return self._get_token_id(self.chain_break_token)
 
     @property
     def all_token_ids(self):
@@ -87,3 +119,16 @@ class EsmSequenceTokenizer(PreTrainedTokenizerFast, EsmTokenizerBase):
     @property
     def special_token_ids(self):
         return self.all_special_ids
+
+    def _get_token_id(self, token) -> int:
+        token_id = self.convert_tokens_to_ids(token)
+        assert isinstance(token_id, int)
+        return token_id
+
+    def _get_token(self, token_name: str) -> str:
+        # NOTE: Tokenizers library overloads __getattr__ to expose special tokens
+        # Adding a helper method around it keeps the base class functionality without overriding
+        # the property. See: https://github.com/huggingface/transformers/blob/41925e42135257361b7f02aa20e3bbdab3f7b923/src/transformers/tokenization_utils_base.py#L1086
+        token_str = self.__getattr__(token_name)
+        assert isinstance(token_str, str)
+        return token_str
