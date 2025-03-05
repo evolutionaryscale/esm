@@ -9,14 +9,14 @@ from esm.sdk.forge import (
 
 
 class SequenceStructureSageMakerClient(SequenceStructureForgeInferenceClient):
-    def __init__(self, endpoint_name: str):
+    def __init__(self, endpoint_name: str, model: str | None = None):
         """SequenceStructure (folding and inverse folding) client that talks to a SageMaker endpoint.
 
         Args:
             endpoint_name: Name of the SageMaker endpoint.
         """
         # Dummy URL and token to make SequenceStructureForgeInferenceClient happy.
-        super().__init__(url="", token="dummy")
+        super().__init__(url="", model=model, token="dummy")
 
         self._endpoint_name = endpoint_name
 
