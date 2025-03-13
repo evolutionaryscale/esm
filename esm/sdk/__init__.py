@@ -30,7 +30,6 @@ def batch_executor(max_attempts: int = 10):
 
     Usage:
         with batch_executor() as executor:
-            for inputs in input_batches:
-                executor.submit(fn, inputs)
+            executor.execute_batch(fn, **kwargs)
     """
     return ForgeBatchExecutor(max_attempts)
