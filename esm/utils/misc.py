@@ -260,7 +260,7 @@ def replace_inf(data):
     if data is None:
         return None
     array = np.array(data, dtype=np.float32, copy=False)
-    array = np.where(np.isinf(array), -1, array)
+    array = np.where(np.isinf(array), 1000, array)
     return array.tolist()
 
 

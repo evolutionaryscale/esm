@@ -15,12 +15,13 @@ import torch
 from Bio.Data import PDBData
 from biotite.application.dssp import DsspApp
 from biotite.database import rcsb
-from biotite.structure.io.npz import NpzFile
 from biotite.structure.io.pdb import PDBFile
 from cloudpathlib import CloudPath
+from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist, squareform
 from torch import Tensor
 
+from evolutionaryscale import residue_constants
 from esm.utils import residue_constants as RC
 from esm.utils.constants import esm3 as C
 from esm.utils.misc import slice_python_object_as_numpy
@@ -216,18 +217,6 @@ class ProteinChain:
         np.fill_diagonal(contacts, -1)
         return contacts
 
-    def to_npz(self, path: PathOrBuffer):
-        f = NpzFile()
-        f.set_structure(self.atom_array)
-        f.write(path)
-
-    def to_npz_string(self):
-        f = NpzFile()
-        f.set_structure(self.atom_array)
-        buf = io.BytesIO()
-        f.write(buf)
-        return buf.getvalue()
-
     def to_structure_encoder_inputs(
         self, should_normalize_coordinates: bool = True
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -319,6 +308,79 @@ class ProteinChain:
         sasa_per_residue = np.bincount(arr.res_id, weights=sasa_per_atom)[1:]
         assert len(sasa_per_residue) == len(self)
         return sasa_per_residue
+
+    def globularity(self) -> float:
+        # Computes globularity using total volumes divided by MVEE.
+        # We make the simplifying approximation that atoms never overlap.
+        # The globularity is only computed where structure exists.
+        # Besides the approximation above, this is inspired by:
+
+        # https://www.mdpi.com/2073-4352/11/12/1539
+        # NOTE(@zeming): due to the approximation we make here, that atoms never overlap, you might get >1 globularity
+        mask = self.atom37_mask.any(-1)
+        points = self.atom37_positions[self.atom37_mask]
+        sequence = [aa for aa, m in zip(self.sequence, mask) if m]
+        A, _ = self._mvee(points, tol=1e-3)
+        mvee_volume = (4 * np.pi) / (3 * np.sqrt(np.linalg.det(A)))
+        volume = sum(residue_constants.amino_acid_volumes[x] for x in sequence)
+        ratio = volume / mvee_volume
+
+        # The paper says you must compare the ellipsoidal profile with T, a measurement of
+        # how elongated the ellipsoid is. We want a single number, so we multiply by 1/2T, so
+        # that value is normalized between 0-1
+        eigenvalues = np.linalg.eigvals(A)
+        R = 1 / np.sqrt(eigenvalues)
+        # ellipsoid radii length triangle inequality coefficient
+        T = max(R[0] / (R[1] + R[2]), R[1] / (R[0] + R[2]), R[2] / (R[0] + R[1]))
+        elongation_metric = 1 / max(T, 1)
+        return ratio * elongation_metric
+
+    @staticmethod
+    def _mvee(P: np.ndarray, tol, max_iter=10000):
+        # Finds minimum volume enclosing ellipsoid of a set of points.
+        # Returns A, c where the ellipse is defined as:
+        #    (x-c).T @ A @ (x-c) = 1
+        hull = ConvexHull(P)
+        P = P[hull.vertices]
+        P = P.T
+
+        # Data points
+        d, N = P.shape
+        Q = np.zeros((d + 1, N))
+        Q[:d, :] = P[:d, :N]
+        Q[d, :] = np.ones((1, N))
+
+        # Initializations
+        count = 1
+        err = 1.0
+        u = np.full((N, 1), 1 / N)  # 1st iteration
+
+        # Khachiyan Algorithm
+        for i in range(max_iter):
+            X = Q.dot(np.diag(u.squeeze())) @ Q.T
+            M = np.diag(Q.T @ np.linalg.inv(X) @ Q)
+            maximum, j = np.max(M), np.argmax(M)
+            step_size = (maximum - d - 1) / ((d + 1) * (maximum - 1))
+            new_u = (1 - step_size) * u
+            new_u[j] += step_size
+            count += 1
+            err = np.linalg.norm(new_u - u)
+            u = new_u
+            if err < tol:
+                break
+        else:
+            raise ValueError("MVEE did not converge")
+
+        d = P.shape[0]  # Fixed: use P.shape[0] instead of P.shape
+        U = np.diag(u.squeeze())
+
+        # The A matrix for the ellipse
+        A = (1 / d) * np.linalg.inv(P @ U @ P.T - (P @ u) @ (P @ u).T)
+
+        # Center of the ellipse
+        c = P @ u
+
+        return A, c
 
     def align(
         self,

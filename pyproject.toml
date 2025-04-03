@@ -1,15 +1,17 @@
 [project]
 name = "esm"
-version = "3.1.7"
+version = "3.2.0"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE.txt" }
+license = {file = "LICENSE.txt"}
 
-authors = [{ name = "EvolutionaryScale Team" }]
+authors = [
+  {name = "EvolutionaryScale Team"}
+]
 
 maintainers = [
-  { name = "Zeming Lin", email = "zeming+esm@evolutionaryscale.ai" },
+  {name = "Zeming Lin", email = "zeming+esm@evolutionaryscale.ai" }
 ]
 
 classifiers = [
@@ -25,7 +27,7 @@ dependencies = [
   "transformers<4.48.2",
   "ipython",
   "einops",
-  "biotite==0.41.2",
+  "biotite>=1.0.0",
   "msgpack-numpy",
   "biopython",
   "scikit-learn",
@@ -34,11 +36,11 @@ dependencies = [
   "pandas",
   "cloudpathlib",
   "tenacity",
-  "zstd",
+  "zstd"
 ]
 
 [tool.setuptools]
-package-dir = { "" = "." }
+package-dir = {"" = "."}
 include-package-data = true
 
 [tool.setuptools.packages.find]
@@ -52,9 +54,16 @@ esm = ["data/*"]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+# These are build dependencies, to ensure pip support, keep run-time deps above in `dependencies`
 [tool.pixi.dependencies]
 pkg-config = "*"
 cmake = "*"
+pip = "*"
+twine = "*"
 
 [tool.pixi.pypi-dependencies]
 esm = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+build-wheel = "python -m pip wheel --no-deps -w dist ."
+upload-wheel = "python -m twine upload --repository pypi"
