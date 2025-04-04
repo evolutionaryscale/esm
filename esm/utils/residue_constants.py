@@ -79,3 +79,29 @@ restype_1to3 = {
     "Y": "TYR",
     "V": "VAL",
 }
+
+# Approximate Volumes of amino acids in cubic angstroms.
+# https://www.imgt.org/IMGTeducation/Aide-memoire/_UK/aminoacids/abbreviation.html
+amino_acid_volumes = {
+    "A": 88.6,  # Alanine
+    "R": 173.4,  # Arginine
+    "N": 114.1,  # Asparagine
+    "D": 111.1,  # Aspartic acid
+    "C": 108.5,  # Cysteine
+    "Q": 143.8,  # Glutamine
+    "E": 138.4,  # Glutamic acid
+    "G": 60.1,  # Glycine
+    "H": 153.2,  # Histidine
+    "I": 166.7,  # Isoleucine
+    "L": 166.7,  # Leucine
+    "K": 168.6,  # Lysine
+    "M": 162.9,  # Methionine
+    "F": 189.9,  # Phenylalanine
+    "P": 112.7,  # Proline
+    "S": 89.0,  # Serine
+    "T": 116.1,  # Threonine
+    "W": 227.8,  # Tryptophan
+    "Y": 193.6,  # Tyrosine
+    "V": 140.0,  # Valine
+    "X": 88.6,  # Unknown, use Alanine as approximation
+}

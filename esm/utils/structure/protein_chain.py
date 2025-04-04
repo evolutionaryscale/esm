@@ -21,7 +21,6 @@ from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist, squareform
 from torch import Tensor
 
-from evolutionaryscale import residue_constants
 from esm.utils import residue_constants as RC
 from esm.utils.constants import esm3 as C
 from esm.utils.misc import slice_python_object_as_numpy
@@ -322,7 +321,7 @@ class ProteinChain:
         sequence = [aa for aa, m in zip(self.sequence, mask) if m]
         A, _ = self._mvee(points, tol=1e-3)
         mvee_volume = (4 * np.pi) / (3 * np.sqrt(np.linalg.det(A)))
-        volume = sum(residue_constants.amino_acid_volumes[x] for x in sequence)
+        volume = sum(RC.amino_acid_volumes[x] for x in sequence)
         ratio = volume / mvee_volume
 
         # The paper says you must compare the ellipsoidal profile with T, a measurement of
