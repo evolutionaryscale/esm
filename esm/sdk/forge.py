@@ -2,14 +2,16 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from functools import wraps
-from typing import Sequence
+from typing import Literal, Sequence
 from urllib.parse import urljoin
 
 import requests
 import torch
+from attr import asdict
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponential
 
 from esm.sdk.api import (
+    MSA,
     ESM3InferenceClient,
     ESMProtein,
     ESMProteinError,
@@ -98,33 +100,62 @@ class SequenceStructureForgeInferenceClient:
         self.headers = {"Authorization": f"Bearer {self.token}"}
         self.request_timeout = request_timeout
 
+    def _fetch_msa(self, sequence: str) -> MSA:
+        print("Fetching MSA ... this may take a few minutes")
+        # Accept both "|" and ":" as the chainbreak token.
+        sequence = ":".join(sequence.split("|"))
+        data = self._post(
+            "msa", request={}, params={"sequence": sequence, "use_env": False}
+        )
+        return MSA(sequences=data["msa"])
+
     def fold(
         self,
         sequence: str,
-        potential_sequence_of_concern: bool,
+        msa: MSA | Literal["auto"] | None = None,
+        potential_sequence_of_concern: bool = False,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
         """Predict coordinates for a protein sequence.
 
         Args:
             sequence: Protein sequence to be folded.
-            potential_sequence_of_concern: Self disclosed potential_of_concern bit.
-                This bit is largely ignored by the fold() endpoint.
+            msa: Optional multi-sequence alignment data that may help some models fold the sequence.
             model_name: Override the client level model name if needed.
+
+        Deprecated:
+            potential_sequence_of_concern: this parameter is largely deprecated
+                and ignored by the folding endpoint.
         """
-        request = {"sequence": sequence}
+        del potential_sequence_of_concern
+
+        request: dict[str, str | dict | MSA | None] = {"sequence": sequence}
+
+        if msa is None:
+            request["msa"] = None
+        elif isinstance(msa, MSA):
+            request["msa"] = asdict(msa)
+        elif isinstance(msa, str) and msa == "auto":
+            request["msa"] = asdict(self._fetch_msa(sequence))
+        else:
+            raise AttributeError(
+                f'MSA must be one of None, MSA, or "auto". Got {msa} instead.'
+            )
+
         if model_name is not None:
             request["model"] = model_name
         elif self.model is not None:
             request["model"] = self.model
-        try:
-            data = self._post("fold", request, potential_sequence_of_concern)
-        except ESMProteinError as e:
-            return e
+
+        # Intentionally not catching errors, so our higher level logic such as automatic
+        # batch runner gets a chance to handle different errors properly.
+        data = self._post("fold", request)
 
         return ESMProtein(
             sequence=sequence,
             coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True),
+            ptm=maybe_tensor(data.get("ptm", None)),
+            plddt=maybe_tensor(data.get("plddt", None)),
         )
 
     def inverse_fold(
@@ -157,19 +188,22 @@ class SequenceStructureForgeInferenceClient:
             request["model"] = model_name
         elif self.model is not None:
             request["model"] = self.model
-        try:
-            data = self._post("inverse_fold", request, potential_sequence_of_concern)
-        except ESMProteinError as e:
-            return e
+
+        # Intentionally not catching errors, so our higher level logic such as automatic
+        # batch runner gets a chance to handle different errors properly.
+        data = self._post("inverse_fold", request, potential_sequence_of_concern)
 
         return ESMProtein(sequence=data["sequence"])
 
-    def _post(self, endpoint, request, potential_sequence_of_concern):
+    def _post(
+        self, endpoint, request, params={}, potential_sequence_of_concern: bool = False
+    ):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
 
         response = requests.post(
             urljoin(self.url, f"/api/v1/{endpoint}"),
             json=request,
+            params=params,
             headers=self.headers,
             timeout=self.request_timeout,
         )
@@ -316,6 +350,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "temperature": config.temperature,
             "top_p": config.top_p,
             "condition_on_coordinates_only": config.condition_on_coordinates_only,
+            "strategy": config.strategy,
+            "temperature_annealing": config.temperature_annealing,
         }
         try:
             data = self._post("generate", request, input.potential_sequence_of_concern)
@@ -358,6 +394,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
             "temperature": config.temperature,
             "top_p": config.top_p,
             "condition_on_coordinates_only": config.condition_on_coordinates_only,
+            "strategy": config.strategy,
+            "temperature_annealing": config.temperature_annealing,
         }
 
         try:

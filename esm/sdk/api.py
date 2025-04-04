@@ -266,8 +266,7 @@ class ESMProteinError(Exception, ProteinType):
 @define
 class GenerationConfig:
     track: str = ""
-    # By default avoid sampling the amino acid "X"
-    invalid_ids: Sequence[int] = [24]
+    invalid_ids: Sequence[int] = []
     # Controls the number of tokens to unmask during each round of iterative generation.
     schedule: str = attr.field(
         validator=attr.validators.in_(["cosine", "linear"]), default="cosine"
@@ -282,9 +281,10 @@ class GenerationConfig:
     # Note that this needs to be less than or equal to the sequence length.
     num_steps: int = 20
     temperature: float = 1.0
-    temperature_annealing: bool = False
+    temperature_annealing: bool = True
     top_p: float = 1.0
     condition_on_coordinates_only: bool = True
+    only_compute_backbone_rmsd: bool = False
 
     def use_entropy_based_unmasking_strategy(self):
         """Use entropy based unmasking strategy during generation."""
@@ -297,6 +297,13 @@ class GenerationConfig:
         self.schedule = "cosine"
         self.strategy = "random"
         self.temperature_annealing = True
+
+
+@define
+class MSA:
+    # Paired MSA sequences.
+    # One would typically compute these using, for example, ColabFold.
+    sequences: list[str]
 
 
 @define
