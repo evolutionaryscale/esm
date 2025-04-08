@@ -76,7 +76,7 @@ class ResidueAnnotationsTokenizer(EsmTokenizerBase):
         """
         # interpro_site_starts
         # interpro_site_ends  # should always == interpro_site_starts.  but I haven't checked overall.
-        # interpro_site_residues  # the residue identity of the specfic residue that is annotated.  good for a sanity check that parsing occurred correctly.
+        # interpro_site_residues  # the residue identity of the specific residue that is annotated.  good for a sanity check that parsing occurred correctly.
         # interpro_site_descriptions
         # ASSERT (i.e. drop if bad)
         # interpro_site_residues matches the residue at that position
