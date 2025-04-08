@@ -1,3 +1,7 @@
+# ESM
+
+[![Design a GFP](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/4_forge_generate.ipynb)
+
 - [Installation ](#installation-)
 - [ESM 3](#esm-3-)
   - [Quickstart for ESM3 Open](#esm3-quickstart-)
@@ -38,10 +42,6 @@ Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3
 ESM3-open, with 1.4B parameters, is the smallest and fastest model in the family.
 
 ### Quickstart for ESM3-open <a name="esm3-quickstart"></a>
-
-```
-pip install esm
-```
 
 The weights are stored on HuggingFace Hub under [HuggingFace/EvolutionaryScale/esm3](https://huggingface.co/EvolutionaryScale/esm3).
 
@@ -100,7 +100,11 @@ This enables a seamless transition from smaller and faster models, to our larges
 ### ESM3 Example Usage
  <a name="esm3-example"></a>
 
-Check out our [tutorials](./cookbook/tutorials) to learn how to use ESM3.
+[Generating a novel GFP with chain of thought generation using ESM3](./cookbook/tutorials/3_gfp_design.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/3_gfp_design.ipynb)
+
+[Advanced prompting with ESM3 input tracks](./cookbook/tutorials/4_forge_generate.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/4_forge_generate.ipynb)
+
+
 
 ## ESM C <a name="esm-c"></a>
 [ESM Cambrian](https://www.evolutionaryscale.ai/blog/esm-cambrian) is a parallel model family to our flagship ESM3 generative models. While ESM3 focuses on controllable generation of proteins, ESM C focuses on creating representations of the underlying biology of proteins.
@@ -230,7 +234,7 @@ print(logits_output.logits, logits_output.embeddings)
 ### ESM C Example Usage
  <a name="esm-c-example"></a>
 
-Check out our [tutorials](./cookbook/tutorials) to learn how to use ESM C.
+[Embedding a sequence using ESM C](./cookbook/tutorials/2_embed.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/2_embed.ipynb)
 
 ## Responsible Development <a name="responsible-development"></a>
 
