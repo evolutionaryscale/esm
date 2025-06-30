@@ -1,25 +1,26 @@
 # ESM
 
-[![Design a GFP](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/4_forge_generate.ipynb)
+<div align="center">
+  <img src="_assets/logo.png" width="50"/>
 
-- [ESM](#esm)
-  - [Installation ](#installation-)
-  - [ESM 3  ](#esm-3--)
-    - [Quickstart for ESM3-open ](#quickstart-for-esm3-open-)
-    - [EvolutionaryScale Forge: Access to larger ESM3 models](#evolutionaryscale-forge-access-to-larger-esm3-models)
-    - [ESM3 Example Usage](#esm3-example-usage)
-  - [ESM C ](#esm-c-)
-    - [Quickstart for ESM C Open Models](#quickstart-for-esm-c-open-models)
-    - [ESM C 6B via Forge API ](#esm-c-6b-via-forge-api-)
-    - [Forge Batch Executor](#forge-batch-executor)
-    - [ESM C via SageMaker for Commercial Use  ](#esm-c-via-sagemaker-for-commercial-use--)
-    - [ESM C Example Usage](#esm-c-example-usage)
-  - [Responsible Development ](#responsible-development-)
-  - [Licenses  ](#licenses--)
-  - [Citations  ](#citations--)
-      - [ESM3](#esm3)
-      - [ESM C](#esm-c)
-      - [ESM Github (Code / Weights)](#esm-github-code--weights)
+[ESM3](https://www.science.org/doi/10.1126/science.ads0018) &sdot; [ESM C](https://www.evolutionaryscale.ai/blog/esm-cambrian) &sdot;
+[Slack](https://bit.ly/3FKwcWd) &sdot; [Tutorials](https://github.com/evolutionaryscale/esm/tree/main/cookbook/tutorials) <br>
+</div>
+
+
+- [Installation ](#installation-)
+- [ESM 3](#esm-3-)
+  - [Quickstart for ESM3 Open](#esm3-quickstart-)
+  - [ESM3 98B via Forge API](#esm3-forge)
+  - [ESM3 Example Usage](#esm3-example-usage)
+- [ESM C](#esm-c-)
+  - [Quickstart for ESM C Open Models](#esm-c-open-)
+  - [ESM C 6B via Forge API](#esm-c-forge-)
+  - [ESM C via SageMaker for Commercial Use  ](#esm-c-sagemaker-)
+  - [ESM C Example Usage](#esm-c-example-)
+- [Responsible Development](#responsible-development-)
+- [Licenses](#licenses-)
+- [Citations  ](#citations-)
 
 
 This repository contains flagship protein models for EvolutionaryScale, as well as access to the API. [ESM3](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model) is our flagship multimodal protein generative model, and can be used for generation and prediction tasks. [ESM C](https://www.evolutionaryscale.ai/blog/esm-cambrian) is our best protein representation learning model, and can be used to embed protein sequences.
@@ -42,7 +43,7 @@ ESM3 is a _generative_ masked language model. You can prompt it with partial seq
 <img src="_assets/esm3_diagram.png" alt="ESM3 Diagram" width="400" />
 
 The ESM3 architecture is highly scalable due to its transformer backbone and all-to-all reasoning over discrete token sequences. At its largest scale, ESM3 was trained with 1.07e24 FLOPs on 2.78 billion proteins and 771 billion unique tokens, and has 98 billion parameters.
-Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the pre-print (Hayes et al., 2024)](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model).
+Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the paper (Hayes et al., 2024)](https://www.science.org/doi/10.1126/science.ads0018).
 
 ESM3-open, with 1.4B parameters, is the smallest and fastest model in the family.
 
@@ -252,7 +253,7 @@ The core tenets of our framework are
 - We will adopt risk mitigation strategies and precautionary guardrails
 - We will work with stakeholders in government, policy, and civil society to keep them informed
 
-With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model)
+With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.science.org/doi/10.1126/science.ads0018)
 
 ## Licenses  <a name="licenses"></a>
 
@@ -266,10 +267,10 @@ If you use ESM in your work, please cite one of the following:
 @article {hayes2024simulating,
 	author = {Hayes, Thomas and Rao, Roshan and Akin, Halil and Sofroniew, Nicholas J. and Oktay, Deniz and Lin, Zeming and Verkuil, Robert and Tran, Vincent Q. and Deaton, Jonathan and Wiggert, Marius and Badkundri, Rohil and Shafkat, Irhum and Gong, Jun and Derry, Alexander and Molina, Raul S. and Thomas, Neil and Khan, Yousuf A. and Mishra, Chetan and Kim, Carolyn and Bartie, Liam J. and Nemeth, Matthew and Hsu, Patrick D. and Sercu, Tom and Candido, Salvatore and Rives, Alexander},
 	title = {Simulating 500 million years of evolution with a language model},
-	year = {2024},
-	doi = {10.1101/2024.07.01.600583},
-	URL = {https://doi.org/10.1101/2024.07.01.600583},
-	journal = {bioRxiv}
+	year = {2025},
+	doi = {10.1126/science.ads0018},
+	URL = {http://dx.doi.org/10.1126/science.ads0018},
+	journal = {Science}
 }
 ```
 

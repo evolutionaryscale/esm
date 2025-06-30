@@ -1,8 +1,9 @@
 import base64
+import pickle
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from functools import wraps
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence, cast
 from urllib.parse import urljoin
 
 import requests
@@ -13,19 +14,24 @@ from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponentia
 from esm.sdk.api import (
     MSA,
     ESM3InferenceClient,
+    ESMCInferenceClient,
     ESMProtein,
     ESMProteinError,
     ESMProteinTensor,
+    FoldingConfig,
     ForwardAndSampleOutput,
     ForwardTrackData,
     GenerationConfig,
     InverseFoldingConfig,
     LogitsConfig,
     LogitsOutput,
+    ProteinChain,
     ProteinType,
     SamplingConfig,
     SamplingTrackConfig,
 )
+from esm.utils.constants.api import MIMETYPE_ES_PICKLE
+from esm.utils.decoding import assemble_message
 from esm.utils.misc import (
     deserialize_tensors,
     maybe_list,
@@ -73,13 +79,107 @@ def _validate_protein_tensor_input(input):
         )
 
 
-class SequenceStructureForgeInferenceClient:
+def retry_decorator(func):
+    """
+    A static method that returns a retry decorator. This decorator uses the
+    instance's retry settings.
+    """
+
+    @wraps(func)
+    def wrapper(instance, *args, **kwargs):
+        if skip_retries_var.get():
+            return func(instance, *args, **kwargs)
+        retry_decorator = retry(
+            retry=retry_if_result(retry_if_specific_error),
+            wait=wait_exponential(
+                multiplier=1, min=instance.min_retry_wait, max=instance.max_retry_wait
+            ),
+            stop=stop_after_attempt(instance.max_retry_attempts),
+            before_sleep=log_retry_attempt,
+        )
+        # Apply the retry decorator to the function
+        return retry_decorator(func)(instance, *args, **kwargs)
+
+    return wrapper
+
+
+class _BaseForgeInferenceClient:
+    def __init__(
+        self,
+        model: str,
+        url: str,
+        token: str,
+        request_timeout: int | None,
+        min_retry_wait: int,
+        max_retry_wait: int,
+        max_retry_attempts: int,
+    ):
+        if token == "":
+            raise RuntimeError(
+                "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
+            )
+        self.model = model  # Name of the model to run.
+        self.url = url
+        self.token = token
+        self.headers = {"Authorization": f"Bearer {self.token}"}
+        self.request_timeout = request_timeout
+        self.min_retry_wait = min_retry_wait
+        self.max_retry_wait = max_retry_wait
+        self.max_retry_attempts = max_retry_attempts
+
+    def _post(
+        self,
+        endpoint,
+        request,
+        potential_sequence_of_concern: bool = False,
+        params: dict[str, Any] = {},
+        return_bytes: bool = False,
+        headers: dict[str, str] = {},
+    ):
+        request["potential_sequence_of_concern"] = potential_sequence_of_concern
+
+        headers = {**self.headers, **headers}
+        if return_bytes:
+            headers["return-bytes"] = "true"
+
+        response = requests.post(
+            urljoin(self.url, f"/api/v1/{endpoint}"),
+            json=request,
+            params=params,
+            headers=headers,
+            timeout=self.request_timeout,
+        )
+
+        if not response.ok:
+            raise ESMProteinError(
+                error_code=response.status_code,
+                error_msg=f"Failure in {endpoint}: {response.text}",
+            )
+
+        data = assemble_message(response.headers, response)
+        # Nextjs puts outputs dict under "data" key.
+        # Lift it up for easier downstream processing.
+        if "outputs" not in data and "data" in data:
+            data = data["data"]
+
+        # Print warning message if there is any.
+        if "warning_messages" in data and data["warning_messages"] is not None:
+            for msg in data["warning_messages"]:
+                print("\033[31m", msg, "\033[0m")
+
+        return data
+
+
+class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
     def __init__(
         self,
         url: str = "https://forge.evolutionaryscale.ai",
         model: str | None = None,
         token: str = "",
         request_timeout: int | None = None,
+        min_retry_wait: int = 1,
+        max_retry_wait: int = 10,
+        max_retry_attempts: int = 5,
     ):
         """
         Forge client for folding and inverse folding between sequence and structure spaces.
@@ -90,15 +190,15 @@ class SequenceStructureForgeInferenceClient:
             token: API token.
             request_timeout: Override the system default request timeout, in seconds.
         """
-        if token == "":
-            raise RuntimeError(
-                "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
-            )
-        self.url = url
-        self.model = model
-        self.token = token
-        self.headers = {"Authorization": f"Bearer {self.token}"}
-        self.request_timeout = request_timeout
+        super().__init__(
+            model=model or "",
+            url=url,
+            token=token,
+            request_timeout=request_timeout,
+            min_retry_wait=min_retry_wait,
+            max_retry_wait=max_retry_wait,
+            max_retry_attempts=max_retry_attempts,
+        )
 
     def _fetch_msa(self, sequence: str) -> MSA:
         print("Fetching MSA ... this may take a few minutes")
@@ -109,10 +209,10 @@ class SequenceStructureForgeInferenceClient:
         )
         return MSA(sequences=data["msa"])
 
+    @retry_decorator
     def fold(
         self,
         sequence: str,
-        msa: MSA | Literal["auto"] | None = None,
         potential_sequence_of_concern: bool = False,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
@@ -122,6 +222,8 @@ class SequenceStructureForgeInferenceClient:
             sequence: Protein sequence to be folded.
             msa: Optional multi-sequence alignment data that may help some models fold the sequence.
             model_name: Override the client level model name if needed.
+            config: Optional configuration for folding parameters.
+            target_structure: Optional target structure to use for distogram conditioning.
 
         Deprecated:
             potential_sequence_of_concern: this parameter is largely deprecated
@@ -129,22 +231,12 @@ class SequenceStructureForgeInferenceClient:
         """
         del potential_sequence_of_concern
 
-        request: dict[str, str | dict | MSA | None] = {"sequence": sequence}
+        request: dict[str, Any] = {"sequence": sequence}
 
-        if msa is None:
-            request["msa"] = None
-        elif isinstance(msa, MSA):
-            request["msa"] = asdict(msa)
-        elif isinstance(msa, str) and msa == "auto":
-            request["msa"] = asdict(self._fetch_msa(sequence))
-        else:
-            raise AttributeError(
-                f'MSA must be one of None, MSA, or "auto". Got {msa} instead.'
-            )
 
         if model_name is not None:
             request["model"] = model_name
-        elif self.model is not None:
+        elif self.model is not None and self.model != "":
             request["model"] = self.model
 
         # Intentionally not catching errors, so our higher level logic such as automatic
@@ -158,6 +250,7 @@ class SequenceStructureForgeInferenceClient:
             plddt=maybe_tensor(data.get("plddt", None)),
         )
 
+    @retry_decorator
     def inverse_fold(
         self,
         coordinates: torch.Tensor,
@@ -186,7 +279,7 @@ class SequenceStructureForgeInferenceClient:
         }
         if model_name is not None:
             request["model"] = model_name
-        elif self.model is not None:
+        elif self.model is not None and self.model != "":
             request["model"] = self.model
 
         # Intentionally not catching errors, so our higher level logic such as automatic
@@ -195,40 +288,8 @@ class SequenceStructureForgeInferenceClient:
 
         return ESMProtein(sequence=data["sequence"])
 
-    def _post(
-        self, endpoint, request, params={}, potential_sequence_of_concern: bool = False
-    ):
-        request["potential_sequence_of_concern"] = potential_sequence_of_concern
 
-        response = requests.post(
-            urljoin(self.url, f"/api/v1/{endpoint}"),
-            json=request,
-            params=params,
-            headers=self.headers,
-            timeout=self.request_timeout,
-        )
-
-        if not response.ok:
-            raise ESMProteinError(
-                error_code=response.status_code,
-                error_msg=f"Failure in {endpoint}: {response.text}",
-            )
-
-        data = response.json()
-        # Nextjs puts outputs dict under "data" key.
-        # Lift it up for easier downstream processing.
-        if "outputs" not in data and "data" in data:
-            data = data["data"]
-
-        # Print warning message if there is any.
-        if "warning_messages" in data and data["warning_messages"] is not None:
-            for msg in data["warning_messages"]:
-                print("\033[31m", msg, "\033[0m")
-
-        return data
-
-
-class ESM3ForgeInferenceClient(ESM3InferenceClient):
+class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
     def __init__(
         self,
         model: str,
@@ -239,44 +300,17 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         max_retry_wait: int = 10,
         max_retry_attempts: int = 5,
     ):
-        if token == "":
-            raise RuntimeError(
-                "Please provide a token to connect to Forge via token=YOUR_API_TOKEN_HERE"
-            )
-        self.model = model  # Name of the model to run.
-        self.url = url
-        self.token = token
-        self.headers = {"Authorization": f"Bearer {self.token}"}
-        self.request_timeout = request_timeout
-        self.min_retry_wait = min_retry_wait
-        self.max_retry_wait = max_retry_wait
-        self.max_retry_attempts = max_retry_attempts
-
-    @staticmethod
-    def retry_decorator(func):
-        """
-        A static method that returns a retry decorator. This decorator uses the
-        instance's retry settings.
-        """
-
-        @wraps(func)
-        def wrapper(instance, *args, **kwargs):
-            if skip_retries_var.get():
-                return func(instance, *args, **kwargs)
-            retry_decorator = retry(
-                retry=retry_if_result(retry_if_specific_error),
-                wait=wait_exponential(
-                    multiplier=1,
-                    min=instance.min_retry_wait,
-                    max=instance.max_retry_wait,
-                ),
-                stop=stop_after_attempt(instance.max_retry_attempts),
-                before_sleep=log_retry_attempt,
-            )
-            # Apply the retry decorator to the function
-            return retry_decorator(func)(instance, *args, **kwargs)
-
-        return wrapper
+        ESM3InferenceClient.__init__(self)
+        _BaseForgeInferenceClient.__init__(
+            self,
+            model,
+            url,
+            token,
+            request_timeout,
+            min_retry_wait,
+            max_retry_wait,
+            max_retry_attempts,
+        )
 
     @retry_decorator
     def generate(self, input: ProteinType, config: GenerationConfig) -> ProteinType:
@@ -473,7 +507,12 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
         }
         try:
             data = self._post(
-                "forward_and_sample", request, input.potential_sequence_of_concern
+                "forward_and_sample",
+                request,
+                input.potential_sequence_of_concern,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
             )
         except ESMProteinError as e:
             return e
@@ -627,19 +666,22 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
                 request,
                 input.potential_sequence_of_concern,
                 return_bytes=return_bytes,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
             )
         except ESMProteinError as e:
             return e
 
         def _maybe_logits(track: str):
-            if "logits" in data and track in data["logits"]:
-                return maybe_tensor(data["logits"][track])
-            return None
+            ret = data.get("logits", {}).get(track, None)
+            # TODO(s22chan): just return this when removing return_bytes
+            return ret if ret is None or not return_bytes else maybe_tensor(ret)
 
         def _maybe_b64_decode(obj):
             return (
                 deserialize_tensors(base64.b64decode(obj))
-                if return_bytes and obj is not None
+                if return_bytes and isinstance(obj, str)
                 else obj
             )
 
@@ -663,37 +705,124 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient):
 
         return output
 
-    def _post(
-        self,
-        endpoint,
-        request,
-        potential_sequence_of_concern,
-        return_bytes: bool = False,
-    ):
-        request["potential_sequence_of_concern"] = potential_sequence_of_concern
-        headers = dict(self.headers)
-        if return_bytes:
-            headers["return-bytes"] = "true"
-        response = requests.post(
-            urljoin(self.url, f"/api/v1/{endpoint}"),
-            json=request,
-            headers=headers,
-            timeout=self.request_timeout,
+    @property
+    def raw_model(self):
+        raise NotImplementedError(
+            f"Can not get underlying remote model {self.model} from a Forge client."
         )
 
-        if not response.ok:
-            raise ESMProteinError(
-                error_code=response.status_code,
-                error_msg=f"Failure in {endpoint}: {response.text}",
+
+class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
+    def __init__(
+        self,
+        model: str,
+        url: str = "https://forge.evolutionaryscale.ai",
+        token: str = "",
+        request_timeout: int | None = None,
+        min_retry_wait: int = 1,
+        max_retry_wait: int = 10,
+        max_retry_attempts: int = 5,
+    ):
+        ESMCInferenceClient.__init__(self)
+        _BaseForgeInferenceClient.__init__(
+            self,
+            model,
+            url,
+            token,
+            request_timeout,
+            min_retry_wait,
+            max_retry_wait,
+            max_retry_attempts,
+        )
+
+    @retry_decorator
+    def encode(self, input: ESMProtein) -> ESMProteinTensor | ESMProteinError:
+        tracks = {}
+        tracks["sequence"] = input.sequence
+
+        request = {"inputs": tracks, "model": self.model}
+
+        try:
+            data = self._post("encode", request, input.potential_sequence_of_concern)
+        except ESMProteinError as e:
+            return e
+
+        return ESMProteinTensor(sequence=maybe_tensor(data["outputs"]["sequence"]))
+
+    @retry_decorator
+    def decode(self, input: ESMProteinTensor) -> ESMProtein | ESMProteinError:
+        _validate_protein_tensor_input(input)
+
+        tokens = {}
+        tokens["sequence"] = maybe_list(input.sequence)
+
+        request = {"model": self.model, "inputs": tokens}
+
+        try:
+            data = self._post("decode", request, input.potential_sequence_of_concern)
+        except ESMProteinError as e:
+            return e
+
+        return ESMProtein(sequence=data["outputs"]["sequence"])
+
+    @retry_decorator
+    def logits(
+        self,
+        input: ESMProteinTensor,
+        config: LogitsConfig = LogitsConfig(),
+        return_bytes: bool = True,
+    ) -> LogitsOutput | ESMProteinError:
+        _validate_protein_tensor_input(input)
+
+        req = {}
+        req["sequence"] = maybe_list(input.sequence)
+
+        logits_config = {
+            "sequence": config.sequence,
+            "return_embeddings": config.return_embeddings,
+            "return_hidden_states": config.return_hidden_states,
+            "ith_hidden_layer": config.ith_hidden_layer,
+        }
+
+        request = {"model": self.model, "inputs": req, "logits_config": logits_config}
+        try:
+            data = self._post(
+                "logits",
+                request,
+                input.potential_sequence_of_concern,
+                return_bytes=return_bytes,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
+            )
+        except ESMProteinError as e:
+            return e
+
+        def _maybe_logits(track: str):
+            ret = data.get("logits", {}).get(track, None)
+            # TODO(s22chan): just return this when removing return_bytes
+            return ret if ret is None or not return_bytes else maybe_tensor(ret)
+
+        def _maybe_b64_decode(obj):
+            return (
+                deserialize_tensors(base64.b64decode(obj))
+                if return_bytes and isinstance(obj, str)
+                else obj
             )
 
-        data = response.json()
-        # Nextjs puts outputs dict under "data" key.
-        # Lift it up for easier downstream processing.
-        if "outputs" not in data and "data" in data:
-            data = data["data"]
+        logits = _maybe_b64_decode(data["logits"])
+        data["logits"] = dict(logits) if logits is not None else logits
+        data["embeddings"] = _maybe_b64_decode(data["embeddings"])
+        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"])
 
-        return data
+
+        output = LogitsOutput(
+            logits=ForwardTrackData(sequence=_maybe_logits("sequence")),
+            embeddings=maybe_tensor(data["embeddings"]),
+            hidden_states=maybe_tensor(data["hidden_states"]),
+        )
+
+        return output
 
     @property
     def raw_model(self):

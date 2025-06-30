@@ -19,7 +19,10 @@ from esm.utils.misc import (
     get_chainbreak_boundaries_from_sequence,
 )
 from esm.utils.structure.protein_chain import ProteinChain
-from esm.utils.structure.protein_complex import ProteinComplex
+from esm.utils.structure.protein_complex import (
+    SINGLE_LETTER_CHAIN_IDS,
+    ProteinComplex,
+)
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
@@ -158,10 +161,16 @@ class ESMProtein(ProteinType):
             gt_chains = None
         pred_chains = []
         for i, (start, end) in enumerate(chain_boundaries):
+            if i >= len(SINGLE_LETTER_CHAIN_IDS):
+                raise ValueError(
+                    f"Too many chains to convert to ProteinComplex. The maximum number of chains is {len(SINGLE_LETTER_CHAIN_IDS)}"
+                )
             pred_chain = ProteinChain.from_atom37(
                 atom37_positions=coords[start:end],
                 sequence=self.sequence[start:end],
-                chain_id=gt_chains[i].chain_id if gt_chains is not None else None,
+                chain_id=gt_chains[i].chain_id
+                if gt_chains is not None
+                else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
             )
             pred_chains.append(pred_chain)
@@ -312,6 +321,8 @@ class InverseFoldingConfig:
     temperature: float = 1.0
 
 
+
+
 ## Low Level Endpoint Types
 @define
 class SamplingTrackConfig:
@@ -372,6 +383,9 @@ class LogitsConfig:
     return_embeddings: bool = False
     return_hidden_states: bool = False
     ith_hidden_layer: int = -1
+
+
+
 
 
 @define
