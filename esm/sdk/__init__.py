@@ -23,13 +23,14 @@ def client(
     return ESM3ForgeInferenceClient(model, url, token, request_timeout)
 
 
-def batch_executor(max_attempts: int = 10):
+def batch_executor(max_attempts: int = 10, show_progress: bool = True):
     """
     Args:
         max_attempts: Maximum number of attempts to make before giving up.
+        show_progress: Whether to display a tqdm progress bar.
 
     Usage:
-        with batch_executor() as executor:
+        with batch_executor(show_progress=False) as executor:
             executor.execute_batch(fn, **kwargs)
     """
-    return ForgeBatchExecutor(max_attempts)
+    return ForgeBatchExecutor(max_attempts=max_attempts, show_progress=show_progress)

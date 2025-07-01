@@ -2,7 +2,7 @@ import threading
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from contextvars import copy_context
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, List
 
 from tqdm import tqdm
 
@@ -47,14 +47,21 @@ class AIMDRateLimiter:
 
 
 class ForgeBatchExecutor:
-    """Context manager for managing concurrent calls with rate limiting."""
+    """Context manager for managing concurrent calls with rate limiting.
 
-    def __init__(self, max_attempts: int = 10):
-        self.rate_limiter = AIMDRateLimiter()
+    Args:
+        max_attempts: Maximum attempts per task before failing.
+        max_workers: Maximum number of concurrent workers. Default is 512.
+        show_progress: Whether to display a tqdm progress bar. Default ``True``.
+    """
+
+    def __init__(
+        self, max_attempts: int = 10, max_workers: int = 512, show_progress: bool = True
+    ):
+        self.rate_limiter = AIMDRateLimiter(max_concurrency=max_workers)
         self.max_attempts = max_attempts
-        self._executor = ThreadPoolExecutor(
-            max_workers=self.rate_limiter.max_concurrency
-        )
+        self.show_progress = show_progress
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._skip_retries_token = None
 
     def __enter__(self):
@@ -67,9 +74,11 @@ class ForgeBatchExecutor:
         if self._executor:
             self._executor.shutdown(wait=True)
 
-    def _validate_inputs(self, inputs: Dict[str, Any]) -> int:
+    def _validate_inputs(self, args: Any, kwargs: Any) -> int:
         """Validate input lengths and return the number of tasks."""
-        input_lengths = [len(v) for v in inputs.values() if isinstance(v, list)]
+        input_lengths = [len(v) for v in kwargs.values() if isinstance(v, list)]
+        input_lengths.extend([len(v) for v in args if isinstance(v, list)])
+
         num_inputs = max(input_lengths) if input_lengths else 1
 
         if input_lengths and len(set(input_lengths)) > 1:
@@ -77,9 +86,11 @@ class ForgeBatchExecutor:
 
         return num_inputs
 
-    def execute_batch(self, user_func: Callable, **kwargs: Any) -> List[Any]:
+    def execute_batch(
+        self, user_func: Callable, *args: Any, **kwargs: Any
+    ) -> List[Any]:
         """Call the endpoint with batched inputs, managing concurrency and retries."""
-        num_tasks = self._validate_inputs(kwargs)
+        num_tasks = self._validate_inputs(args, kwargs)
         # Initialize task queue with (task_index, attempt) tuples.
         task_queue = deque([(i, 1) for i in range(num_tasks)])
         results = [None] * num_tasks
@@ -90,7 +101,11 @@ class ForgeBatchExecutor:
         retry_count = 0
 
         with tqdm(
-            total=num_tasks, desc="Processing", bar_format=TQDM_BAR_FORMAT, unit="task"
+            total=num_tasks,
+            desc="Processing",
+            bar_format=TQDM_BAR_FORMAT,
+            unit="task",
+            disable=not self.show_progress,
         ) as pbar:
             while task_queue or running_futures:
                 current_limit = self.rate_limiter.concurrency
@@ -100,8 +115,11 @@ class ForgeBatchExecutor:
                         k: v[idx] if isinstance(v, list) else v
                         for k, v in kwargs.items()
                     }
+                    call_args = [v[idx] if isinstance(v, list) else v for v in args]
                     ctx = copy_context()
-                    future = self._executor.submit(ctx.run, user_func, **call_kwargs)
+                    future = self._executor.submit(
+                        ctx.run, user_func, *call_args, **call_kwargs
+                    )
                     running_futures[future] = (idx, attempt)
 
                 done, _ = wait(
@@ -128,9 +146,10 @@ class ForgeBatchExecutor:
                         else:
                             results[idx] = e  # type: ignore
                             fail_count += 1
-                            pbar.update(0)
+                            pbar.update(1)
 
-                self.rate_limiter.adjust_concurrency(error_seen)
+                if len(done) > 0:
+                    self.rate_limiter.adjust_concurrency(error_seen)
                 pbar.set_postfix_str(
                     f"Success={success_count} Fail={fail_count} Retry={retry_count}"
                 )

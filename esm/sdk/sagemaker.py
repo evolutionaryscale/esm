@@ -20,7 +20,7 @@ class SequenceStructureSageMakerClient(SequenceStructureForgeInferenceClient):
 
         self._endpoint_name = endpoint_name
 
-        self._client = boto3.client(service_name="sagemaker-runtime")
+        self._boto3_client = boto3.client(service_name="sagemaker-runtime")
 
     def _post(self, endpoint, request, potential_sequence_of_concern):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
@@ -38,7 +38,7 @@ class SequenceStructureSageMakerClient(SequenceStructureForgeInferenceClient):
         }
 
         try:
-            response = self._client.invoke_endpoint(
+            response = self._boto3_client.invoke_endpoint(
                 EndpointName=self._endpoint_name,
                 ContentType="application/json",
                 Body=json.dumps(invocations_request),
@@ -73,7 +73,7 @@ class ESM3SageMakerClient(ESM3ForgeInferenceClient):
         self._endpoint_name = endpoint_name
         self._model = model
 
-        self._client = boto3.client(service_name="sagemaker-runtime")
+        self._boto3_client = boto3.client(service_name="sagemaker-runtime")
 
     def _post(
         self,
@@ -99,7 +99,7 @@ class ESM3SageMakerClient(ESM3ForgeInferenceClient):
         }
 
         try:
-            response = self._client.invoke_endpoint(
+            response = self._boto3_client.invoke_endpoint(
                 EndpointName=self._endpoint_name,
                 ContentType="application/json",
                 Body=json.dumps(invocations_request),
