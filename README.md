@@ -103,6 +103,15 @@ model: ESM3InferenceClient = esm.sdk.client("esm3-medium-2024-08", token="<your 
 and the exact same code will work.
 This enables a seamless transition from smaller and faster models, to our largest and most capable protein language models for protein design work.
 
+### Async Forge Client
+The Forge client supports asynchronous API calls for improved performance when making multiple requests. Async methods follow the same naming convention as their synchronous counterparts, with `async_` prepended to the method name. For example:
+
+```py
+model = esm.sdk.client("esm3-medium-2024-08", token="<your forge token>")
+
+protein = await model.async_generate(protein, GenerationConfig(track="sequence"))
+```
+
 ### ESM3 Example Usage
  <a name="esm3-example"></a>
 
@@ -191,7 +200,7 @@ client =  ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.e
 #     outputs = executor.execute_batch(user_func=<your_function>, **kwargs)
 
 with batch_executor() as executor:
-    outputs = executor.execute_batch(user_func=embed_sequence, model=client, sequence=sequences)
+    outputs = executor.execute_batch(user_func=embed_sequence, client=client, sequence=sequences)
 ```
 
 ### ESM C via SageMaker for Commercial Use  <a name="esm-c-sagemaker"></a>

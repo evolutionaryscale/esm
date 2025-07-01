@@ -426,10 +426,20 @@ class ESM3InferenceClient(ABC):
         # if a ESMProteinTensor is provided, encode and decode are skipped
         raise NotImplementedError
 
+    async def async_generate(
+        self, input: ProteinType, config: GenerationConfig
+    ) -> ProteinType:
+        raise NotImplementedError
+
     def batch_generate(
         self, inputs: Sequence[ProteinType], configs: Sequence[GenerationConfig]
     ) -> Sequence[ProteinType]:
         # Same as generate(...), but generates a batch of proteins at once.
+        raise NotImplementedError
+
+    async def async_batch_generate(
+        self, inputs: Sequence[ProteinType], configs: Sequence[GenerationConfig]
+    ) -> Sequence[ProteinType]:
         raise NotImplementedError
 
     def encode(self, input: ESMProtein) -> ESMProteinTensor:
@@ -437,8 +447,14 @@ class ESM3InferenceClient(ABC):
         # This runs the structure_token_encoder, as well as dealing with PDB => atom37 conversion
         raise NotImplementedError
 
+    async def async_encode(self, input: ESMProtein) -> ESMProteinTensor:
+        raise NotImplementedError
+
     def decode(self, input: ESMProteinTensor) -> ESMProtein:
         # Decode is the inverse of encode, and runs a structure_token_decoder to output coordinates
+        raise NotImplementedError
+
+    async def async_decode(self, input: ESMProteinTensor) -> ESMProtein:
         raise NotImplementedError
 
     def logits(
@@ -449,12 +465,22 @@ class ESM3InferenceClient(ABC):
         # Please use forward_and_sample instead.
         raise NotImplementedError
 
+    async def async_logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        raise NotImplementedError
+
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput:
         # forward_and_sample runs a single model forward, sampling tokens according to `SamplingConfiguration`.
         # This is the way for power users to run ESM3. We hope to design this in a way to enable high throughput
         # inference, as well as arbitrary chain-of-though invocations of ESM3.
+        raise NotImplementedError
+
+    async def async_forward_and_sample(
+        self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
+    ) -> ForwardAndSampleOutput:
         raise NotImplementedError
 
     @property
@@ -468,11 +494,22 @@ class ESMCInferenceClient(ABC):
         # Encode allows for encoding RawRepresentation into TokenizedRepresentation.
         raise NotImplementedError
 
+    async def async_encode(self, input: ESMProtein) -> ESMProteinTensor:
+        raise NotImplementedError
+
     def decode(self, input: ESMProteinTensor) -> ESMProtein:
         # Decode is the inverse of encode
         raise NotImplementedError
 
+    async def async_decode(self, input: ESMProteinTensor) -> ESMProtein:
+        raise NotImplementedError
+
     def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        raise NotImplementedError
+
+    async def async_logits(
         self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
     ) -> LogitsOutput:
         raise NotImplementedError
