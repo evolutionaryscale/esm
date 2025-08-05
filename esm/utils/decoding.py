@@ -1,8 +1,10 @@
+import pickle
 import warnings
-from typing import cast
+from typing import Any, Mapping, cast
 
 import attr
 import torch
+from requests import Response
 
 from esm.models.function_decoder import FunctionTokenDecoder
 from esm.models.vqvae import StructureTokenDecoder
@@ -27,6 +29,7 @@ from esm.tokenization.structure_tokenizer import (
     StructureTokenizer,
 )
 from esm.tokenization.tokenizer_base import EsmTokenizerBase
+from esm.utils.constants import api as api_constants
 from esm.utils.constants import esm3 as C
 from esm.utils.function.encode_decode import (
     decode_function_tokens,
@@ -242,3 +245,12 @@ def decode_residue_annotations(
         residue_annotations_tokenizer=residue_annotation_decoder,
     )
     return residue_annotations
+
+
+def assemble_message(headers: Mapping[str, str], response: Response) -> dict[str, Any]:
+    content_type = headers.get("Content-Type", "application/json")
+    if content_type == api_constants.MIMETYPE_ES_PICKLE:
+        return pickle.loads(response.content)
+    elif content_type == "application/json":
+        return response.json()
+    raise ValueError(f"Unknown Content-Type: {content_type}")

@@ -169,20 +169,22 @@ class RotaryEmbedding(torch.nn.Module):
                 else:
                     inv_freq = self.inv_freq
             else:
-                t = torch.arange(seqlen, device=device, dtype=self.inv_freq.dtype)
+                t = torch.arange(seqlen, device=device, dtype=self.inv_freq.dtype)  # pyright: ignore[reportArgumentType, reportCallIssue]
                 t /= self.scaling_factor
                 inv_freq = self.inv_freq
             # Don't do einsum, it converts fp32 to fp16 under AMP
             # freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            freqs = torch.outer(t, inv_freq)
+            freqs = torch.outer(t, inv_freq)  # pyright: ignore[reportArgumentType]
 
             if self.scale is None:
                 self._cos_cached = torch.cos(freqs).to(dtype)
                 self._sin_cached = torch.sin(freqs).to(dtype)
             else:
                 power = (
-                    torch.arange(
-                        seqlen, dtype=self.scale.dtype, device=self.scale.device
+                    torch.arange(  # pyright: ignore[reportCallIssue]
+                        seqlen,
+                        dtype=self.scale.dtype,  # pyright: ignore[reportArgumentType]
+                        device=self.scale.device,  # pyright: ignore[reportArgumentType]
                     )
                     - seqlen // 2
                 ) / self.scale_base

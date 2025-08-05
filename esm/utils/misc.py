@@ -267,6 +267,8 @@ def replace_inf(data):
 def maybe_tensor(x, convert_none_to_nan: bool = False) -> torch.Tensor | None:
     if x is None:
         return None
+    if isinstance(x, list) and all(isinstance(t, torch.Tensor) for t in x):
+        return torch.stack(x)
     if convert_none_to_nan:
         x = np.asarray(x, dtype=np.float32)
         x = np.where(x is None, np.nan, x)
@@ -311,6 +313,7 @@ def get_chainbreak_boundaries_from_sequence(sequence: Sequence[str]) -> np.ndarr
     return chain_boundaries
 
 
+# TODO(return_bytes): remove when retiring return_bytes on SageMaker
 def deserialize_tensors(b: bytes) -> Any:
     buf = BytesIO(zstd.ZSTD_uncompress(b))
     d = torch.load(buf, map_location="cpu", weights_only=False)

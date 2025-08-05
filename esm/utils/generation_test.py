@@ -11,7 +11,7 @@ from evolutionaryscale.utils.env import ModelName
 from evolutionaryscale.utils.remote_inference.api_v1 import (
     ESM3RemoteModelInferenceClient,
 )
-from projects.forge.fastapi.utils.model import _load_esm_model
+from projects.forge.inference.utils.model import _load_esm_model
 
 
 @pytest.fixture()

@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 import attr
 import torch
 from tqdm import tqdm
 
 from esm.models.esm3 import ESM3
+from esm.sdk import batch_executor
 from esm.sdk.api import (
     ESM3InferenceClient,
     ESMProtein,
@@ -36,8 +38,10 @@ class ESM3GuidedDecoding:
     ):
         if isinstance(client, ESM3):
             self.tokenizers = client.tokenizers
+            self._use_batch_executor = False
         elif isinstance(client, ESM3ForgeInferenceClient):
-            self.tokenizers = get_esm3_model_tokenizers(client.model)
+            self.tokenizers = get_esm3_model_tokenizers()
+            self._use_batch_executor = True
         else:
             raise ValueError(
                 "client must be an instance of ESM3 or ESM3ForgeInferenceClient"
@@ -81,23 +85,51 @@ class ESM3GuidedDecoding:
                     protein_tensor, track=track
                 )
 
-            samples = []
-            scores = []
-            for _ in range(num_samples_per_step):
-                sample = self.randomly_unmask_positions(
-                    protein_tensor, num_positions_to_unmask, track=track
+            def _sample_and_score(
+                pt: ESMProteinTensor,
+            ) -> Tuple[ESMProteinTensor, float]:
+                """Randomly unmask positions and compute the guidance score.
+
+                This helper is executed in parallel by the batch executor so that the
+                underlying `forward_and_sample` RPCs can be performed concurrently.
+                """
+
+                new_pt = self.randomly_unmask_positions(
+                    pt, num_positions_to_unmask, track=track
                 )
-                scores.append(
-                    self.reward_function(
-                        sample,
-                        denoised_prediction_temperature=denoised_prediction_temperature,
+                score_val = self.reward_function(
+                    new_pt,
+                    denoised_prediction_temperature=denoised_prediction_temperature,
+                )
+                return new_pt, score_val
+
+            if self._use_batch_executor:
+                # ----------------------------------------------
+                # Remote client: parallel sampling with executor
+                # ----------------------------------------------
+                with batch_executor(show_progress=False) as executor:
+                    results = executor.execute_batch(
+                        user_func=_sample_and_score,
+                        pt=[protein_tensor] * num_samples_per_step,
                     )
-                )
-                samples.append(sample)
+
+                # Separate samples and their scores returned by the executor
+                samples, scores = zip(*results)  # type: ignore
+            else:
+                # ----------------------------------------------
+                # Local client: sequential sampling (single thread)
+                # ----------------------------------------------
+                samples = []
+                scores = []
+                for _ in range(num_samples_per_step):
+                    sample_pt, score_val = _sample_and_score(protein_tensor)
+                    samples.append(sample_pt)
+                    scores.append(score_val)
 
             # Select best scoring sample
-            best_sample = samples[scores.index(max(scores))]
-            current_score = max(scores)
+            scores_list = list(scores)
+            best_sample = samples[scores_list.index(max(scores_list))]  # type: ignore
+            current_score = max(scores_list)
             protein_tensor = best_sample
 
             if verbose:
@@ -173,7 +205,9 @@ class ESM3GuidedDecoding:
         denoised_protein_tensor = denoised_protein_tensor_output.protein_tensor
         output_track_tensor = getattr(denoised_protein_tensor, track)
         assert output_track_tensor is not None
-        track_tensor[mask_indices] = output_track_tensor[mask_indices]
+        track_tensor[mask_indices] = output_track_tensor[mask_indices].to(
+            track_tensor.dtype
+        )
         setattr(protein_tensor, track, track_tensor)
 
         return protein_tensor

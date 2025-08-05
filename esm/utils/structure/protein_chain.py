@@ -242,11 +242,15 @@ class ProteinChain:
         buf.seek(0)
         return buf.read()
 
-    def state_dict(self, backbone_only=False):
+    def state_dict(self, backbone_only=False, json_serializable=False):
         """This state dict is optimized for storage, so it turns things to fp16 whenever
         possible. Note that we also only support int32 residue indices, I'm hoping we don't
         need more than 2**32 residues..."""
         dct = {k: v for k, v in asdict(self).items()}
+        if backbone_only:
+            dct["atom37_mask"][:, 3:] = False
+        dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
+
         for k, v in dct.items():
             if isinstance(v, np.ndarray):
                 match v.dtype:
@@ -256,9 +260,8 @@ class ProteinChain:
                         dct[k] = v.astype(np.float16)
                     case _:
                         pass
-        if backbone_only:
-            dct["atom37_mask"][:, 3:] = False
-        dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
+                if json_serializable:
+                    dct[k] = v.tolist()
         return dct
 
     def to_blob(self, backbone_only=False) -> bytes:
@@ -266,6 +269,10 @@ class ProteinChain:
 
     @classmethod
     def from_state_dict(cls, dct):
+        for k, v in dct.items():
+            if isinstance(v, list):
+                dct[k] = np.array(v)
+
         atom37 = np.full((*dct["atom37_mask"].shape, 3), np.nan)
         atom37[dct["atom37_mask"]] = dct["atom37_positions"]
         dct["atom37_positions"] = atom37
