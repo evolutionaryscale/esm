@@ -834,7 +834,12 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
         )
         try:
             data = await self._async_post(
-                "forward_and_sample", request, input.potential_sequence_of_concern
+                "forward_and_sample",
+                request,
+                input.potential_sequence_of_concern,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
             )
         except ESMProteinError as e:
             return e
@@ -953,6 +958,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
                 request,
                 input.potential_sequence_of_concern,
                 return_bytes=return_bytes,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
             )
         except ESMProteinError as e:
             return e
@@ -1140,6 +1148,9 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
                 request,
                 input.potential_sequence_of_concern,
                 return_bytes=return_bytes,
+                headers={
+                    "Accept": f"{MIMETYPE_ES_PICKLE};protocol={pickle.HIGHEST_PROTOCOL}, application/json"
+                },
             )
         except ESMProteinError as e:
             return e
