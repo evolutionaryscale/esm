@@ -60,6 +60,9 @@ jobs:
         cache: false
         cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
+    - name: Add test requirements
+      run: pixi add pytest
+
     - name: Run tests
       run: |
         set -o pipefail
@@ -82,9 +85,6 @@ jobs:
       run: |
           docker rm --force --volumes $(docker ps -q) || true
 
-    - name: Add test requirements
-      run: pixi add pytest
-
     # Next two steps adds a comment to any PR that reports tests + code coverage.
     - name: Pytest Coverage Comment
       if: ${{ github.event_name == 'pull_request' }}
@@ -95,7 +95,6 @@ jobs:
         pytest-coverage-path: pytest-coverage.txt
         junitxml-path: pytest.xml
         report-only-changed-files: true
-      shell: pixi run bash -e {0}
 
     - name: Pytest coverage GitHub summary
       if: ${{ github.event_name == 'pull_request' }}
