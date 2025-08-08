@@ -35,6 +35,7 @@ dependencies = [
   "attrs",
   "pandas",
   "cloudpathlib",
+  "httpx",
   "tenacity",
   "zstd"
 ]
@@ -69,12 +70,14 @@ build-wheel = "python -m pip wheel --no-deps -w dist ."
 upload-wheel = "python -m twine upload --repository pypi"
 
 [tool.pixi.feature.dev.dependencies]
-pytest = "*"
+matplotlib = "*"
 pre-commit = "*"
+pytest = "*"
+"seaborn" = "*"
 
 [tool.pixi.feature.dev.tasks]
-lint = "pre-commit --all-files --show-diff-on-failure"
-test = "pytest -v --junitxml=pytest.xml | tee pytest-coverage.txt"
+lint-all = "pre-commit run --all-files --show-diff-on-failure"
+cov-test = "pytest -v --junitxml=pytest.xml | tee pytest-coverage.txt"
 
 [tool.pixi.environments]
 default = {features = [], solve-group = "default"}
