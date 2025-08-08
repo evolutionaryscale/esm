@@ -67,3 +67,15 @@ esm = { path = ".", editable = true }
 [tool.pixi.tasks]
 build-wheel = "python -m pip wheel --no-deps -w dist ."
 upload-wheel = "python -m twine upload --repository pypi"
+
+[tool.pixi.feature.dev.dependencies]
+pytest = "*"
+pre-commit = "*"
+
+[tool.pixi.feature.dev.tasks]
+lint = "pre-commit --all-files --show-diff-on-failure"
+test = "pytest -v --junitxml=pytest.xml | tee pytest-coverage.txt"
+
+[tool.pixi.environments]
+default = {features = [], solve-group = "default"}
+dev = {features = ["dev"], solve-group = "default"}
