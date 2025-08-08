@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   test-precommit:
-    runs-on: ubuntu-22.04-16core
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout code
@@ -45,7 +45,7 @@ jobs:
 
 
   test-esm:
-    runs-on: ubuntu-22.04-16core
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout code
