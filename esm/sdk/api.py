@@ -123,7 +123,8 @@ class ESMProtein(ProteinType):
         protein_complex.to_pdb(pdb_path)
 
     def to_pdb_string(self) -> str:
-        protein_chain = self.to_protein_chain()
+        # Note: This was modified to match .to_pdb() behavior. We can revisit this at some point
+        protein_chain = self.to_protein_complex().infer_oxygen()
         return protein_chain.to_pdb_string()
 
     def to_protein_chain(self) -> ProteinChain:
@@ -172,6 +173,7 @@ class ESMProtein(ProteinType):
                 if gt_chains is not None
                 else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
+                confidence=self.plddt[start:end] if self.plddt is not None else None,
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
@@ -382,6 +384,7 @@ class LogitsConfig:
     # Embeddings.
     return_embeddings: bool = False
     return_hidden_states: bool = False
+    return_mean_embedding: bool = False
     ith_hidden_layer: int = -1
 
 
@@ -392,6 +395,7 @@ class LogitsConfig:
 class LogitsOutput:
     logits: ForwardTrackData | None = None
     embeddings: torch.Tensor | None = None
+    mean_embedding: torch.Tensor | None = None
 
     # Residue annotations is multi-hot, so deserves special treatment
     # It's not a categorical distribution, but instead a bernoulli, so

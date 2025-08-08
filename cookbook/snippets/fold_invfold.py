@@ -2,7 +2,6 @@ import os
 from typing import cast
 
 import numpy as np
-
 from esm.sdk.api import (
     ESM3InferenceClient,
     ESMProtein,

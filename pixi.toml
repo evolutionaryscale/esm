@@ -1,0 +1,64 @@
+[project]
+name = "esm"
+version = "3.2.1"
+platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
+channels = ["conda-forge", "bioconda", "ebetica0"]
+description = "EvolutionaryScale open model repository"
+
+[environments]
+default = ["all", "dev", "gpu"]
+
+[dependencies]
+# faiss blocks 3.123
+python = ">=3.12.11,<3.13"
+
+[feature.gpu.target.linux-64.pypi-dependencies]
+torch = ">=2.7.0,<2.8"
+flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.0.post2/flash_attn-2.8.0.post2+cu12torch2.7cxx11abiFALSE-cp312-cp312-linux_x86_64.whl" }
+
+[feature.all.dependencies]
+anyio = "*"
+faiss = "*"
+h11 = { version = ">=0.16.0" }  # h11 <= 0.14.0 has security vulnerability.
+
+[feature.dev.pypi-dependencies]
+ipython = "<=8.17.2"
+pre-commit = "*"
+pytest = ">=8.3.3,<8.4"  # temp upper pin to deal with asyncio plugins not working with 8.4
+pytest-asyncio = "*"
+pytest-xdist = "*"
+pytest-cov = "*"
+pytest-timeout = "*"
+ruff = "==0.7.3"
+scikit-learn = ">=1.5"
+einops = "*"
+msgpack-numpy = "*"
+biopython = ">=1.8"
+pandas = ">=2.2"
+tenacity = "*"
+attrs = ">=21.0.0"
+zstd = "==1.5.6.6"
+transformers = "==4.51.3" # forge Dockerfile must change if this changes
+cloudpathlib = "*"
+biotite = ">=1.0.0"
+brotli = "*"
+
+# Jupyter related
+jupyterlab = "*"
+ipywidgets = "*"
+py3dmol = "*"
+dna_features_viewer = "*"
+
+pyright = "==1.1.399" # Remember to change this in the pre-commit
+import-linter = "*"
+pytest-watcher = "*"
+
+pydssp = "*"
+pygtrie = "*"
+
+# AWS/Sagemaker dependencies
+sagemaker = "*"
+aiobotocore = ">=2.15.0"
+
+# editable install of curdir - makes esm package importable from anywhere
+esm = { path = '.', editable = true }

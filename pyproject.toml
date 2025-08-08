@@ -3,7 +3,7 @@ name = "esm"
 version = "3.2.1"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 license = {file = "LICENSE.txt"}
 
 authors = [
@@ -18,13 +18,15 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
   "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
   "torch>=2.2.0",
   "torchvision",
   "torchtext",
-  "transformers<4.48.2",
+  "transformers==4.51.3",
   "ipython",
   "einops",
   "biotite>=1.0.0",
@@ -36,8 +38,19 @@ dependencies = [
   "pandas",
   "cloudpathlib",
   "tenacity",
-  "zstd"
+  "zstd",
+  "httpx"
 ]
+
+
+# Pytest
+[tool.pytest.ini_options]
+addopts = """
+  --cov=esm
+	--cov-report term-missing:skip-covered
+	-n auto
+	--ignore=tests/oss_pytests/test_oss_client.py
+"""
 
 [tool.setuptools]
 package-dir = {"" = "."}
@@ -52,7 +65,7 @@ esm = ["data/*"]
 
 [tool.pixi.project]
 channels = ["conda-forge"]
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64"]
 
 # These are build dependencies, to ensure pip support, keep run-time deps above in `dependencies`
 [tool.pixi.dependencies]
@@ -60,6 +73,7 @@ pkg-config = "*"
 cmake = "*"
 pip = "*"
 twine = "*"
+python = "3.12.*"
 
 [tool.pixi.pypi-dependencies]
 esm = { path = ".", editable = true }
@@ -67,3 +81,47 @@ esm = { path = ".", editable = true }
 [tool.pixi.tasks]
 build-wheel = "python -m pip wheel --no-deps -w dist ."
 upload-wheel = "python -m twine upload --repository pypi"
+
+[tool.ruff]
+extend-include = ["*.ipynb"]
+exclude = [
+	"evolutionaryscale/opensource/root/examples/tutorials/1_esmprotein.ipynb",
+]
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`), sort imports ('I')
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = [
+    # allow variable == False (tensors should do this)
+    "E712",
+    # allow assigning of lambdas
+    "E731",
+    # Allow ambiguous variables, e.g. we use O for oxygen
+    "E741",
+    # Ignore errors from jaxtyping hints
+    # https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error
+    "F722",
+    # TODO: Fix the few offenders in a follow up PR
+    "E721",
+]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+known-third-party = ["wandb"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.isort]
+known_third_party = ["wandb"]
+
+[tool.pyright]
+root = ['.']
+useLibraryCodeForTypes = true
+reportPrivateImportUsage = false
+typeCheckingMode = "basic"
+
+[tool.importlinter]
+root_package = "esm"

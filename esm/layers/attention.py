@@ -11,9 +11,9 @@ from esm.layers.rotary import (
 )
 
 try:
-    from flash_attn import flash_attn_varlen_qkvpacked_func  # type:ignore
-except ImportError:
-    flash_attn_varlen_func = None
+    from flash_attn import flash_attn_varlen_qkvpacked_func
+except (ImportError, RuntimeError):
+    flash_attn_varlen_qkvpacked_func = None
 
 
 class MultiHeadAttention(nn.Module):
@@ -117,7 +117,7 @@ class FlashMultiHeadAttention(MultiHeadAttention):
         )
         qkv_N3HD = self.rotary(qkv_N3HD, cu_seqlens, max_seqlen)
 
-        context_NHD = flash_attn_varlen_qkvpacked_func(
+        context_NHD = flash_attn_varlen_qkvpacked_func(  # type: ignore
             qkv_N3HD, cu_seqlens, max_seqlen, softmax_scale=self.d_head**-0.5
         )
         context_ND = einops.rearrange(context_NHD, "n h d -> n (h d)")

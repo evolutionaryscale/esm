@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import io
+import warnings
 from dataclasses import asdict, dataclass, replace
 from functools import cached_property
 from pathlib import Path
-from typing import Sequence, TypeVar, Union
+from typing import Any, Mapping, Sequence
 
 import biotite.structure as bs
 import brotli
@@ -12,51 +13,44 @@ import msgpack
 import msgpack_numpy
 import numpy as np
 import torch
-from Bio.Data import PDBData
-from biotite.application.dssp import DsspApp
 from biotite.database import rcsb
 from biotite.structure.io.pdb import PDBFile
-from cloudpathlib import CloudPath
-from scipy.spatial import ConvexHull
-from scipy.spatial.distance import pdist, squareform
-from torch import Tensor
+from biotite.structure.io.pdbx import CIFCategory, CIFColumn, CIFData, CIFFile
+from biotite.structure.io.pdbx import set_structure as set_structure_pdbx
+from scipy.spatial import ConvexHull, KDTree
+from scipy.spatial.distance import cdist, pdist, squareform
 
-from esm.utils import residue_constants as RC
-from esm.utils.constants import esm3 as C
+from esm.utils import residue_constants
 from esm.utils.misc import slice_python_object_as_numpy
 from esm.utils.structure.affine3d import Affine3D
 from esm.utils.structure.aligner import Aligner
-from esm.utils.structure.metrics import compute_lddt_ca
+from esm.utils.structure.atom_indexer import AtomIndexer
+from esm.utils.structure.metrics import (
+    compute_gdt_ts,
+    compute_lddt_ca,
+)
+from esm.utils.structure.mmcif_parsing import (
+    MmcifWrapper,
+    Residue,
+)
 from esm.utils.structure.normalize_coordinates import (
     apply_frame_to_coords,
     get_protein_normalization_frame,
-    normalize_coordinates,
 )
+from esm.utils.structure.protein_structure import (
+    index_by_atom_name,
+)
+from esm.utils.types import PathOrBuffer
 
 msgpack_numpy.patch()
-
 CHAIN_ID_CONST = "A"
 
 
-ArrayOrTensor = TypeVar("ArrayOrTensor", np.ndarray, Tensor)
-PathLike = Union[str, Path, CloudPath]
-PathOrBuffer = Union[PathLike, io.StringIO]
-
-
-def index_by_atom_name(
-    atom37: ArrayOrTensor, atom_names: str | list[str], dim: int = -2
-) -> ArrayOrTensor:
-    squeeze = False
-    if isinstance(atom_names, str):
-        atom_names = [atom_names]
-        squeeze = True
-    indices = [RC.atom_order[atom_name] for atom_name in atom_names]
-    dim = dim % atom37.ndim
-    index = tuple(slice(None) if dim != i else indices for i in range(atom37.ndim))
-    result = atom37[index]  # type: ignore
-    if squeeze:
-        result = result.squeeze(dim)
-    return result
+def _num_non_null_residues(seqres_to_structure_chain: Mapping[int, Residue]) -> int:
+    return sum(
+        residue.residue_number is not None
+        for residue in seqres_to_structure_chain.values()
+    )
 
 
 def infer_CB(C, N, Ca, L: float = 1.522, A: float = 1.927, D: float = -2.143):
@@ -78,34 +72,84 @@ def infer_CB(C, N, Ca, L: float = 1.522, A: float = 1.927, D: float = -2.143):
     return Ca + sum([m * d for m, d in zip(m, d)])
 
 
-class AtomIndexer:
-    def __init__(self, structure: ProteinChain, property: str, dim: int):
-        self.structure = structure
-        self.property = property
-        self.dim = dim
+def chain_to_ndarray(
+    atom_array: bs.AtomArray, mmcif: MmcifWrapper, chain_id: str, is_predicted=False
+):
+    entity_id = None
+    for entity, chains in mmcif.entities.items():
+        if chain_id in chains:
+            entity_id = entity
+    num_res = len(mmcif.chain_to_seqres[chain_id])
+    sequence = mmcif.chain_to_seqres[chain_id]
 
-    def __getitem__(self, atom_names: str | list[str]) -> np.ndarray:
-        return index_by_atom_name(
-            getattr(self.structure, self.property), atom_names, self.dim
-        )
+    atom_positions = np.full([num_res, residue_constants.atom_type_num, 3], np.nan)
+    atom_mask = np.full([num_res, residue_constants.atom_type_num], False, dtype=bool)
+    residue_index = np.full([num_res], -1, dtype=np.int64)
+    insertion_code = np.full([num_res], "", dtype="<U4")
+
+    confidence = np.ones([num_res], dtype=np.float32)
+
+    for res_index in range(num_res):
+        chain = atom_array[atom_array.chain_id == chain_id]
+        assert isinstance(chain, bs.AtomArray)
+        res_at_position = mmcif.seqres_to_structure[chain_id][res_index]
+
+        if res_at_position.residue_number is None:
+            continue
+
+        residue_index[res_index] = res_at_position.residue_number
+        insertion_code[res_index] = res_at_position.insertion_code
+        res = chain[
+            (chain.res_id == res_at_position.residue_number)
+            & (chain.ins_code == res_at_position.insertion_code)
+            & (chain.hetero == res_at_position.hetflag)
+        ]
+        assert isinstance(res, bs.AtomArray)
+
+        # Atom level features
+        for atom in res:
+            atom_name = atom.atom_name
+            if atom_name == "SE" and atom.res_name == "MSE":
+                # Put the coords of the selenium atom in the sulphur column
+                atom_name = "SD"
+
+            if atom_name in residue_constants.atom_order:
+                atom_positions[res_index, residue_constants.atom_order[atom_name]] = (
+                    atom.coord
+                )
+                atom_mask[res_index, residue_constants.atom_order[atom_name]] = True
+                if is_predicted and atom_name == "CA":
+                    confidence[res_index] = atom.b_factor
+
+    assert all(sequence), "Some residue name was not specified correctly"
+    return (
+        sequence,
+        atom_positions,
+        atom_mask,
+        residue_index,
+        insertion_code,
+        confidence,
+        entity_id,
+    )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProteinChain:
     """Dataclass with atom37 representation of a single protein chain."""
 
     id: str
     sequence: str
-    chain_id: str  # author chain id
+    chain_id: str  # author chain id - mutable
     entity_id: int | None
     residue_index: np.ndarray
     insertion_code: np.ndarray
     atom37_positions: np.ndarray
     atom37_mask: np.ndarray
     confidence: np.ndarray
+    mmcif: MmcifWrapper | None = None
 
     def __post_init__(self):
-        self.atom37_mask = self.atom37_mask.astype(bool)
+        assert self.atom37_mask.dtype == bool, self.atom37_mask.dtype
         assert self.atom37_positions.shape[0] == len(self.sequence), (
             self.atom37_positions.shape,
             len(self.sequence),
@@ -152,10 +196,10 @@ class ProteinChain:
                     chain_id="A" if self.chain_id is None else self.chain_id,
                     res_id=res_idx,
                     ins_code=ins_code,
-                    res_name=RC.restype_1to3.get(res_name, "UNK"),
+                    res_name=residue_constants.restype_1to3.get(res_name, "UNK"),
                     hetero=False,
-                    atom_name=RC.atom_types[i],
-                    element=RC.atom_types[i][0],
+                    atom_name=residue_constants.atom_types[i],
+                    element=residue_constants.atom_types[i][0],
                     b_factor=conf,
                 )
                 atoms.append(atom)
@@ -182,18 +226,20 @@ class ProteinChain:
                     # hard coded to as we currently only support single chain structures
                     chain_id=CHAIN_ID_CONST,
                     res_id=res_idx + 1,
-                    res_name=RC.restype_1to3.get(res_name, "UNK"),
+                    res_name=residue_constants.restype_1to3.get(res_name, "UNK"),
                     hetero=False,
-                    atom_name=RC.atom_types[i],
-                    element=RC.atom_types[i][0],
+                    atom_name=residue_constants.atom_types[i],
+                    element=residue_constants.atom_types[i][0],
                     b_factor=conf,
                 )
                 atoms.append(atom)
         return bs.array(atoms)
 
-    def __getitem__(self, idx: int | list[int] | slice | np.ndarray):
+    def __getitem__(self, idx: int | list[int] | slice | np.ndarray | torch.Tensor):
         if isinstance(idx, int):
             idx = [idx]
+        if isinstance(idx, torch.Tensor):
+            idx = idx.cpu().numpy()
 
         sequence = slice_python_object_as_numpy(self.sequence, idx)
         return replace(
@@ -216,17 +262,6 @@ class ProteinChain:
         np.fill_diagonal(contacts, -1)
         return contacts
 
-    def to_structure_encoder_inputs(
-        self, should_normalize_coordinates: bool = True
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        coords = torch.tensor(self.atom37_positions, dtype=torch.float32)
-        plddt = torch.tensor(self.confidence, dtype=torch.float32)
-        residue_index = torch.tensor(self.residue_index, dtype=torch.long)
-
-        if should_normalize_coordinates:
-            coords = normalize_coordinates(coords)
-        return coords.unsqueeze(0), plddt.unsqueeze(0), residue_index.unsqueeze(0)
-
     def to_pdb(self, path: PathOrBuffer, include_insertions: bool = True):
         """Dssp works better w/o insertions."""
         f = PDBFile()
@@ -242,11 +277,77 @@ class ProteinChain:
         buf.seek(0)
         return buf.read()
 
+    def to_mmcif(self, path: PathOrBuffer):
+        f = CIFFile()
+        set_structure_pdbx(f, self.atom_array, data_block=self.id)
+
+        # incantations molstar needs to render pLDDT / confidence onto
+        # the structure with "alphafold-view"
+        f.block["ma_qa_metric"] = CIFCategory(
+            name="ma_qa_metric",
+            columns={
+                "id": CIFColumn(data=CIFData(array=np.array([1, 2]), dtype=np.int64)),
+                "mode": CIFColumn(
+                    data=CIFData(array=np.array(["global", "local"]), dtype=np.str_)
+                ),
+                "name": CIFColumn(
+                    data=CIFData(array=np.array(["pLDDT", "pLDDT"]), dtype=np.str_)
+                ),
+            },
+        )
+
+        # table is a duplicate of data already in the atom array, but
+        # needed by molstar to render pLDDT / confidence
+        resid_pldd_table = {
+            # hard coded to as we currently only support single chain structures
+            "label_asym_id": CIFColumn(
+                data=CIFData(
+                    array=[CHAIN_ID_CONST] * len(self.residue_index), dtype=np.str_
+                )
+            ),
+            "label_comp_id": CIFColumn(
+                data=CIFData(
+                    array=[
+                        residue_constants.restype_1to3.get(c, "UNK")
+                        for c in self.sequence
+                    ],
+                    dtype=np.str_,
+                )
+            ),
+            "label_seq_id": CIFColumn(
+                data=CIFData(array=self.residue_index, dtype=np.int64)
+            ),
+            "ordinal_id": CIFColumn(
+                data=CIFData(array=self.residue_index, dtype=np.int64)
+            ),
+            # hard coded to show these are all local plDDT values
+            "metric_id": CIFColumn(
+                data=CIFData(array=["2"] * len(self.residue_index), dtype=np.str_)
+            ),
+            "metric_value": CIFColumn(
+                data=CIFData(array=self.confidence, dtype=np.float32)
+            ),
+            # hard coded to show there are the initial version, there are no revisions
+            "model_id": CIFColumn(
+                data=CIFData(array=["1"] * len(self.residue_index), dtype=np.str_)
+            ),
+        }
+        f.block["ma_qa_metric_local"] = CIFCategory(
+            name="ma_qa_metric_local", columns=resid_pldd_table
+        )
+        f.write(path)
+
+    def to_mmcif_string(self) -> str:
+        buf = io.StringIO()
+        self.to_mmcif(buf)
+        buf.seek(0)
+        return buf.read()
+
     def state_dict(self, backbone_only=False, json_serializable=False):
         """This state dict is optimized for storage, so it turns things to fp16 whenever
         possible. Note that we also only support int32 residue indices, I'm hoping we don't
         need more than 2**32 residues..."""
-        dct = {k: v for k, v in asdict(self).items()}
+        dct = {k: v for k, v in asdict(self).items() if k not in ["mmcif"]}
         if backbone_only:
             dct["atom37_mask"][:, 3:] = False
         dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
@@ -265,7 +366,11 @@ class ProteinChain:
         return dct
 
     def to_blob(self, backbone_only=False) -> bytes:
-        return brotli.compress(msgpack.dumps(self.state_dict(backbone_only)))
+        return brotli.compress(msgpack.dumps(self.state_dict(backbone_only)), quality=5)
+
+    @classmethod
+    def from_open_source(cls, pc: ProteinChain):
+        return cls(**vars(pc))
 
     @classmethod
     def from_state_dict(cls, dct):
@@ -280,11 +385,11 @@ class ProteinChain:
             k: (v.astype(np.float32) if k in ["atom37_positions", "confidence"] else v)
             for k, v in dct.items()
         }
-        return cls(**dct)
+        return cls(**dct, mmcif=None)
 
     @classmethod
     def from_blob(cls, input: Path | str | io.BytesIO | bytes):
-        """NOTE: blob + sparse coding + brotli + fp16 reduces memory
+        """NOTE(@zlin): blob + sparse coding + brotli + fp16 reduces memory
         of chains from 52G/1M chains to 20G/1M chains, I think this is a good first
         shot at compressing and dumping chains to disk. I'm sure there's better ways."""
         match input:
@@ -296,24 +401,132 @@ class ProteinChain:
                 bytes = input
         return cls.from_state_dict(msgpack.loads(brotli.decompress(bytes)))
 
-    def dssp(self):
-        dssp = DsspApp.annotate_sse(self.atom_array_no_insertions)
-        full_dssp = np.full(len(self.sequence), "X", dtype="<U1")
-        full_dssp[self.atom37_mask.any(-1)] = dssp
+    def dssp(
+        self,
+        three_class: bool = False,
+        bin_path: str = "/mnt/main0/shared/tools/mkdssp",
+    ):
+        from evolutionaryscale.utils.biotools import SSE_8CLASS_TO_3CLASS_MAP, dssp
+
+        is_valid = self.atom_mask[["N", "CA", "C", "O"]].all(-1) & np.array(
+            [aa != "X" for aa in self.sequence]
+        )
+        if not is_valid.any():
+            raise RuntimeError(
+                "No valid positions for DSSP. If this is a predicted structure, call infer_oxygen() first."
+            )
+        chain_dssp = dssp(
+            self.to_pdb_string(include_insertions=False), bin_path=bin_path
+        )
+        full_dssp = np.full(len(self.sequence), "C", dtype="<U1")
+        full_dssp[is_valid] = list(chain_dssp)
+
+        if three_class:
+            full_dssp = np.array(
+                [SSE_8CLASS_TO_3CLASS_MAP.get(c, "C") for c in full_dssp]
+            )
+
         return full_dssp
 
-    def sasa(self):
+    def sasa(self, by_residue: bool = True):
         arr = self.atom_array_no_insertions
         sasa_per_atom = bs.sasa(arr)  # type: ignore
-        # Sum per-atom SASA into residue "bins", with np.bincount.
+        if by_residue:
+            # Sum per-atom SASA into residue "bins", with np.bincount.
+            assert arr.res_id is not None
+            # NOTE(rverkuil): arr.res_id is 1-indexed, but np.bincount returns a sum for bin 0, so we strip.
+            # NOTE(aderry): We compute only for residues with coordinates, return NaN otherwise.
+            num_trailing_residues = len(self) - arr.res_id.max()
+            sasa_per_residue = np.concatenate(
+                [
+                    np.bincount(arr.res_id, weights=sasa_per_atom)[1:],
+                    np.zeros(num_trailing_residues),
+                ]
+            )
+            sasa_per_residue[~self.atom37_mask.any(-1)] = np.nan
+            assert len(sasa_per_residue) == len(self)
+            return sasa_per_residue
+        return sasa_per_atom
+
+    def sap_score(self, aggregation: str = "atom") -> np.ndarray:
+        """Computes per-atom SAP score.
+        Can optionally aggregate by residue (by averaging over atoms. NOTE: this returns values only for residues that have coordinates!)
+        or full-protein (sum of SAP score for atoms with SAP > 0, as in Lauer et al. 2011)."""
+        sap_radius = 5.0
+        arr = self.atom_array_no_insertions
+
+        # asserts to avoid type errors
         assert arr.res_id is not None
-        assert np.array_equal(
-            np.sort(np.unique(arr.res_id)), np.arange(1, arr.res_id.max() + 1)
-        ), "SASA calculation expected contiguous res_ids in range(1, len(chain)+1)"
-        # NOTE: arr.res_id is 1-indexed, but np.bincount returns a sum for bin 0, so we strip.
-        sasa_per_residue = np.bincount(arr.res_id, weights=sasa_per_atom)[1:]
-        assert len(sasa_per_residue) == len(self)
-        return sasa_per_residue
+        assert arr.res_name is not None
+        assert arr.atom_name is not None
+        assert arr.coord is not None
+
+        # compute SASA and residue-specific properties
+        sasa_per_atom = self.sasa(by_residue=False)
+        resid_to_resname = dict(zip(arr.res_id, arr.res_name))
+
+        max_side_chain_asa = np.full(len(self), np.nan)
+        res_hydrophobicity = np.full(len(self), np.nan)
+        resolved_res_mask = self.atom37_mask.any(-1)
+        num_trailing_residues = len(self) - arr.res_id.max()
+
+        max_side_chain_asa[resolved_res_mask] = np.array(
+            [
+                residue_constants.side_chain_asa[resid_to_resname[i]]
+                for i in np.unique(arr.res_id)
+            ]
+        )
+        res_hydrophobicity[resolved_res_mask] = np.array(
+            [
+                residue_constants.hydrophobicity[resid_to_resname[i]]
+                for i in np.unique(arr.res_id)
+            ]
+        )
+        assert len(max_side_chain_asa) == len(self)
+        assert len(res_hydrophobicity) == len(self)
+
+        # compute SAP score
+        is_side_chain = ~bs.filter_peptide_backbone(arr)
+        sasa_per_atom[is_side_chain] = 0
+        kdtree = KDTree(arr.coord)
+        neighbors = kdtree.query_ball_tree(kdtree, sap_radius, p=2.0)
+        sap_by_atom = np.zeros_like(sasa_per_atom)
+        for i, nn_list in enumerate(neighbors):
+            saa_nn = np.zeros_like(sasa_per_atom)
+            saa_nn[nn_list] = sasa_per_atom[nn_list]
+            sasa_within_r = np.concatenate(
+                [
+                    np.bincount(arr.res_id, weights=saa_nn)[1:],
+                    np.zeros(num_trailing_residues),
+                ]
+            )
+            sap = np.nansum((sasa_within_r / max_side_chain_asa) * res_hydrophobicity)
+            sap_by_atom[i] = sap
+
+        match aggregation:
+            case "atom":
+                return sap_by_atom
+            case "residue":
+                sap_by_residue = np.concatenate(
+                    [
+                        np.bincount(arr.res_id, weights=sap_by_atom)[1:],
+                        np.zeros(num_trailing_residues),
+                    ]
+                ) / (
+                    np.concatenate(
+                        [np.bincount(arr.res_id)[1:], np.zeros(num_trailing_residues)]
+                    )
+                    + 1e-8
+                )
+                sap_by_residue[~resolved_res_mask] = np.nan
+                assert len(sap_by_residue) == len(self)
+                return sap_by_residue
+            case "protein":
+                return sum(sap_by_atom[sap_by_atom > 0])  # pyright: ignore[reportReturnType]
+            case _:
+                raise ValueError(
+                    f"Invalid aggregation method: {aggregation}. Must be one of 'atom', 'residue', or 'protein'"
+                )
 
     def globularity(self) -> float:
         # Computes globularity using total volumes divided by MVEE.
@@ -328,7 +541,7 @@ class ProteinChain:
         sequence = [aa for aa, m in zip(self.sequence, mask) if m]
         A, _ = self._mvee(points, tol=1e-3)
         mvee_volume = (4 * np.pi) / (3 * np.sqrt(np.linalg.det(A)))
-        volume = sum(RC.amino_acid_volumes[x] for x in sequence)
+        volume = sum(residue_constants.amino_acid_volumes[x] for x in sequence)
         ratio = volume / mvee_volume
 
         # The paper says you must compare the ellipsoidal profile with T, a measurement of
@@ -387,6 +600,10 @@ class ProteinChain:
         c = P @ u
 
         return A, c
+
+    def radius_of_gyration(self):
+        arr = self.atom_array_no_insertions
+        return bs.gyration_radius(arr)
 
     def align(
         self,
@@ -462,8 +679,8 @@ class ProteinChain:
         target_inds: list[int] | np.ndarray | None = None,
         **kwargs,
     ) -> float | np.ndarray:
-        """Compute the LDDT between this protein chain and another.
-        NOTE: LDDT IS NOT SYMMETRIC. The call should always be prediction.lddt_ca(native).
+        """Compute the LDDT between this protein chain and another. NOTE: LDDT IS NOT SYMMETRIC.
+        The call should always be prediction.lddt_ca(native).
 
         Arguments:
             native (ProteinChain): The ground truth protein chain
@@ -481,6 +698,179 @@ class ProteinChain:
             **kwargs,
         )
         return float(lddt) if lddt.numel() == 1 else lddt.numpy().flatten()
+
+    def gdt_ts(
+        self,
+        target: ProteinChain,
+        mobile_inds: list[int] | np.ndarray | None = None,
+        target_inds: list[int] | np.ndarray | None = None,
+        **kwargs,
+    ) -> float | np.ndarray:
+        """Compute the GDT_TS between this protein chain and another.
+
+        Arguments:
+            target (ProteinChain): The other protein chain to compare to.
+            mobile_inds (list[int], np.ndarray, optional): The indices of the mobile atoms to align. These are NOT residue indices
+            target_inds (list[int], np.ndarray, optional): The indices of the target atoms to align. These are NOT residue indices
+
+        Returns:
+            float: The GDT_TS score between the two protein chains.
+        """
+        gdt_ts = compute_gdt_ts(
+            mobile=torch.tensor(
+                index_by_atom_name(self.atom37_positions[mobile_inds], "CA"),
+                dtype=torch.float32,
+            ).unsqueeze(0),
+            target=torch.tensor(
+                index_by_atom_name(target.atom37_positions[target_inds], "CA"),
+                dtype=torch.float32,
+            ).unsqueeze(0),
+            atom_exists_mask=torch.tensor(
+                index_by_atom_name(self.atom37_mask[mobile_inds], "CA", dim=-1)
+                & index_by_atom_name(target.atom37_mask[target_inds], "CA", dim=-1)
+            ).unsqueeze(0),
+            **kwargs,
+        )
+        return float(gdt_ts) if gdt_ts.numel() == 1 else gdt_ts.numpy().flatten()
+
+    def tm_score(self, native: ProteinChain) -> float:
+        from evolutionaryscale.utils.biotools import tmalign
+
+        tm = tmalign(
+            self.to_pdb_string(), native.to_pdb_string(), use_sequence_alignment=False
+        )
+        return tm.score_norm2
+
+    @classmethod
+    def chain_iterable_from_mmcif(
+        cls,
+        path: PathOrBuffer | MmcifWrapper,
+        id: str | None = None,
+        is_predicted: bool = False,
+        keep_source: bool = False,
+    ):
+        """Return a list[ProteinChain] object from an mmcif file, a iterable list of all protein chain
+        from an mmcif file
+        """
+        if isinstance(path, MmcifWrapper):
+            mmcif = path
+        else:
+            mmcif = MmcifWrapper.read(path, id)
+        for chain in bs.chain_iter(mmcif.structure):
+            chain = chain[bs.filter_amino_acids(chain) & ~chain.hetero]
+            if len(chain) == 0:
+                continue
+            chain_id = chain.chain_id[0]
+            entity_id = None
+            for entity, chains in mmcif.entities.items():
+                if chain_id in chains:
+                    entity_id = entity
+            assert entity_id is not None
+            (
+                sequence,
+                atom_positions,
+                atom_mask,
+                residue_index,
+                insertion_code,
+                confidence,
+                _,
+            ) = chain_to_ndarray(chain, mmcif, chain_id, is_predicted)
+            assert all(sequence), "Some residue name was not specified correctly"
+
+            yield cls(
+                id=mmcif.id,
+                sequence=sequence,
+                chain_id=chain_id,
+                entity_id=entity_id,
+                atom37_positions=atom_positions,
+                atom37_mask=atom_mask,
+                residue_index=residue_index,
+                insertion_code=insertion_code,
+                confidence=confidence,
+                mmcif=mmcif if keep_source else None,
+            )
+
+    @classmethod
+    def from_mmcif(
+        cls,
+        path: PathOrBuffer | MmcifWrapper,
+        chain_id: str | None = None,
+        entity_id: int | None = None,
+        id: str | None = None,
+        is_predicted: bool = False,
+        keep_source: bool = False,
+    ):
+        """Return a ProteinChain object from an mmcif file.
+
+        Args:
+            path (str | Path | io.TextIO): Path or buffer to read mmcif file from. Should be uncompressed.
+            id (str, optional): String identifier to assign to structure. Will attempt to infer otherwise.
+            is_predicted (bool): If True, reads b factor as the confidence readout. Default: False.
+            chain_id (str, optional): Select a chain corresponding to (author) chain id.
+            entity_id (int, optional): Select a chain corresponding to a particular entity.
+
+        If neither `chain_id` nor `entity_id` is specified, defaults to the first entity.
+        """
+        if isinstance(path, MmcifWrapper):
+            mmcif = path
+        else:
+            mmcif = MmcifWrapper.read(path, id)
+
+        # If neither chain_id nor entity_id is specified, default to the first entity
+        if chain_id is None and entity_id is None:
+            if not mmcif.entities:
+                raise ValueError("Structure contains no entities")
+            entity_id = min(mmcif.entities.keys())  # Pick the first entity by ID
+
+        if entity_id is not None:
+            assert chain_id is None
+            if entity_id not in mmcif.entities:
+                raise ValueError(
+                    f"Structure does not contain entity `{entity_id}`. Valid entities: {mmcif.entities.keys()}"
+                )
+            chains = mmcif.entities[entity_id]
+
+            # Select the chain id corresponding to the longest chain. If all are equal length, selects the first.
+            chain_id = max(
+                chains,
+                key=lambda chain: _num_non_null_residues(
+                    mmcif.seqres_to_structure[chain]
+                ),
+            )
+        else:
+            assert chain_id is not None
+            for entity, chains in mmcif.entities.items():
+                if chain_id in chains:
+                    entity_id = entity
+        if entity_id is None:
+            warnings.warn(
+                "Failed to detect entity_id from mmcif file, it may be malformed."
+            )
+
+        atom_array = mmcif.structure
+        (
+            sequence,
+            atom_positions,
+            atom_mask,
+            residue_index,
+            insertion_code,
+            confidence,
+            _,
+        ) = chain_to_ndarray(atom_array, mmcif, chain_id, is_predicted)
+        assert all(sequence), "Some residue name was not specified correctly"
+
+        return cls(
+            id=mmcif.id,
+            sequence=sequence,
+            chain_id=chain_id,
+            entity_id=entity_id,
+            atom37_positions=atom_positions,
+            atom37_mask=atom_mask.astype(bool),
+            residue_index=residue_index,
+            insertion_code=insertion_code,
+            confidence=confidence,
+            mmcif=mmcif if keep_source else None,
+        )
 
     @classmethod
     def from_atom37(
@@ -553,7 +943,7 @@ class ProteinChain:
             chain_id=chain_id,
             entity_id=entity_id,
             atom37_positions=atom37_positions,
-            atom37_mask=atom_mask,
+            atom37_mask=atom_mask.astype(bool),
             residue_index=residue_index,
             insertion_code=insertion_code,
             confidence=confidence,
@@ -604,10 +994,12 @@ class ProteinChain:
         id: str | None = None,
         is_predicted: bool = False,
     ) -> "ProteinChain":
-        """Return a ProteinChain object from an pdb file.
+        """Return a ProteinChain object from an pdb file. NOTE: prefer mmcif for rcsb PDB files.
+        This function is mostly to interface with old PDB files and predicted structures -
+        it will not fill out the entity id correctly
 
         Args:
-            path (str | Path | io.TextIO): Path or buffer to read pdb file from. Should be uncompressed.
+            path (str | Path | io.TextIO): Path or buffer to read mmcif file from. Should be uncompressed.
             id (str, optional): String identifier to assign to structure. Will attempt to infer otherwise.
             is_predicted (bool): If True, reads b factor as the confidence readout. Default: False.
             chain_id (str, optional): Select a chain corresponding to (author) chain id. "detect" uses the
@@ -637,20 +1029,17 @@ class ProteinChain:
         entity_id = 1  # Not supplied in PDBfiles
 
         sequence = "".join(
-            (
-                r
-                if len(r := PDBData.protein_letters_3to1.get(monomer[0].res_name, "X"))
-                == 1
-                else "X"
-            )
+            residue_constants.restype_3to1.get(monomer[0].res_name, "X")
             for monomer in bs.residue_iter(atom_array)
         )
         num_res = len(sequence)
 
         atom_positions = np.full(
-            [num_res, RC.atom_type_num, 3], np.nan, dtype=np.float32
+            [num_res, residue_constants.atom_type_num, 3], np.nan, dtype=np.float32
         )
-        atom_mask = np.full([num_res, RC.atom_type_num], False, dtype=bool)
+        atom_mask = np.full(
+            [num_res, residue_constants.atom_type_num], False, dtype=bool
+        )
         residue_index = np.full([num_res], -1, dtype=np.int64)
         insertion_code = np.full([num_res], "", dtype="<U4")
 
@@ -671,9 +1060,11 @@ class ProteinChain:
                     # Put the coords of the selenium atom in the sulphur column
                     atom_name = "SD"
 
-                if atom_name in RC.atom_order:
-                    atom_positions[i, RC.atom_order[atom_name]] = atom.coord
-                    atom_mask[i, RC.atom_order[atom_name]] = True
+                if atom_name in residue_constants.atom_order:
+                    atom_positions[i, residue_constants.atom_order[atom_name]] = (
+                        atom.coord
+                    )
+                    atom_mask[i, residue_constants.atom_order[atom_name]] = True
                     if is_predicted and atom_name == "CA":
                         confidence[i] = atom.b_factor
 
@@ -685,21 +1076,49 @@ class ProteinChain:
             chain_id=chain_id,
             entity_id=entity_id,
             atom37_positions=atom_positions,
-            atom37_mask=atom_mask,
+            atom37_mask=atom_mask.astype(bool),
             residue_index=residue_index,
             insertion_code=insertion_code,
             confidence=confidence,
+            mmcif=None,
         )
 
     @classmethod
-    def from_rcsb(cls, pdb_id: str, chain_id: str = "detect"):
-        """Fetch a protein chain from the RCSB PDB database."""
-        f: io.StringIO = rcsb.fetch(pdb_id, "pdb")  # type: ignore
-        return cls.from_pdb(f, chain_id=chain_id, id=pdb_id)
+    def from_mds(cls, data: dict[str, Any]) -> "ProteinChain":
+        return cls(
+            id=data["id"],
+            chain_id=data["chain_id"],
+            entity_id=data["entity_id"],
+            sequence=data["sequence"],
+            residue_index=data["residue_index"],
+            insertion_code=np.asarray(data["insertion_code"]),
+            atom37_positions=data["atom37_positions"],
+            atom37_mask=data["atom37_mask"].astype(bool),
+            confidence=data["confidence"],
+            mmcif=None,
+        )
+
+    @classmethod
+    def from_rcsb(
+        cls,
+        pdb_id: str,
+        chain_id: str | None = None,
+        entity_id: int | None = None,
+        keep_source: bool = False,
+    ) -> ProteinChain:
+        f: io.StringIO = rcsb.fetch(pdb_id, "cif")  # type: ignore
+        return cls.from_mmcif(
+            f,
+            id=pdb_id,
+            chain_id=chain_id,
+            entity_id=entity_id,
+            keep_source=keep_source,
+            is_predicted=False,
+        )
 
     @classmethod
     def from_atomarray(
-        cls, atom_array: bs.AtomArray, id: str | None = None
+        cls, atom_array: bs.AtomArray, id: str | None = None, is_predicted: bool = False
     ) -> "ProteinChain":
         """A simple converter from bs.AtomArray -> ProteinChain.
         Uses PDB file format as intermediate."""
@@ -711,7 +1130,7 @@ class ProteinChain:
         buf = io.StringIO()
         pdb_file.write(buf)
         buf.seek(0)
-        return cls.from_pdb(buf, id=id)
+        return cls.from_pdb(buf, id=id, is_predicted=is_predicted)
 
     def get_normalization_frame(self) -> Affine3D:
         """Given a set of coordinates, compute a single frame.
@@ -745,6 +1164,8 @@ class ProteinChain:
 
     def infer_oxygen(self) -> ProteinChain:
         """Oxygen position is fixed given N, CA, C atoms. Infer it if not provided."""
+        O_missing_indices = np.argwhere(np.isnan(self.atoms["O"]).any(axis=1)).squeeze()
+
         O_vector = torch.tensor([0.6240, -1.0613, 0.0103], dtype=torch.float32)
         N, CA, C = torch.from_numpy(self.atoms[["N", "CA", "C"]]).float().unbind(dim=1)
         N = torch.roll(N, -3)
@@ -756,9 +1177,11 @@ class ProteinChain:
         atom37_positions = self.atom37_positions.copy()
         atom37_mask = self.atom37_mask.copy()
 
-        atom37_positions[:, RC.atom_order["O"]] = O.numpy()
-        atom37_mask[:, RC.atom_order["O"]] = ~np.isnan(
-            atom37_positions[:, RC.atom_order["O"]]
+        atom37_positions[O_missing_indices, residue_constants.atom_order["O"]] = O[
+            O_missing_indices
+        ].numpy()
+        atom37_mask[O_missing_indices, residue_constants.atom_order["O"]] = ~np.isnan(
+            atom37_positions[O_missing_indices, residue_constants.atom_order["O"]]
         ).any(-1)
         new_chain = replace(
             self, atom37_positions=atom37_positions, atom37_mask=atom37_mask
@@ -781,7 +1204,7 @@ class ProteinChain:
             infer_cbeta_for_glycine (bool): If True, infers a beta carbon for glycine
                 residues, even though that residue doesn't have one.  Default off.
 
-                NOTE: The reason for having this switch in the first place
+                NOTE(rverkuil): The reason for having this switch in the first place
                 is that sometimes we want a (inferred) CB coordinate for every residue,
                 for example for making a pairwise distance matrix, or doing an RMSD
                 calculation between two designs for a given structural template, w/
@@ -794,9 +1217,11 @@ class ProteinChain:
         if not infer_cbeta_for_glycine:
             inferred_cbeta_positions[np.array(list(self.sequence)) == "G", :] = np.NAN
 
-        atom37_positions[:, RC.atom_order["CB"]] = inferred_cbeta_positions
-        atom37_mask[:, RC.atom_order["CB"]] = ~np.isnan(
-            atom37_positions[:, RC.atom_order["CB"]]
+        atom37_positions[:, residue_constants.atom_order["CB"]] = (
+            inferred_cbeta_positions
+        )
+        atom37_mask[:, residue_constants.atom_order["CB"]] = ~np.isnan(
+            atom37_positions[:, residue_constants.atom_order["CB"]]
         ).any(-1)
         new_chain = replace(
             self, atom37_positions=atom37_positions, atom37_mask=atom37_mask
@@ -822,35 +1247,72 @@ class ProteinChain:
         )
 
     @classmethod
-    def concat(cls, chains: Sequence[ProteinChain]):
-        def join_arrays(arrays: Sequence[np.ndarray], sep: np.ndarray):
-            full_array = []
-            for array in arrays:
-                full_array.append(array)
-                full_array.append(sep)
-            full_array = full_array[:-1]
-            return np.concatenate(full_array, 0)
-
+    def concat(cls, chains: Sequence[ProteinChain], use_chainbreak: bool = True):
         sep_tokens = {
             "residue_index": np.array([-1]),
             "insertion_code": np.array([""]),
-            "atom37_positions": np.full([1, 37, 3], np.nan),
-            "atom37_mask": np.zeros([1, 37]),
+            "atom37_positions": np.full([1, 37, 3], np.inf),
+            "atom37_mask": np.zeros([1, 37], dtype=bool),
             "confidence": np.array([0]),
         }
+
+        if use_chainbreak:
+
+            def join_arrays(arrays: Sequence[np.ndarray], sep: np.ndarray):
+                full_array = []
+                for array in arrays:
+                    full_array.append(array)
+                    full_array.append(sep)
+                full_array = full_array[:-1]
+                return np.concatenate(full_array, 0)
+
+        else:
+
+            def join_arrays(arrays: Sequence[np.ndarray], sep: np.ndarray):
+                return np.concatenate(arrays, 0)
 
         array_args: dict[str, np.ndarray] = {
             name: join_arrays([getattr(chain, name) for chain in chains], sep)
             for name, sep in sep_tokens.items()
         }
 
+        chain_break = residue_constants.CHAIN_BREAK_TOKEN if use_chainbreak else ""
         return cls(
             id=chains[0].id,
-            sequence=C.CHAIN_BREAK_STR.join(chain.sequence for chain in chains),
+            sequence=chain_break.join(chain.sequence for chain in chains),
             chain_id="A",
             entity_id=None,
+            mmcif=None,
             **array_args,
         )
+
+    def find_nonpolymer_contacts(self):
+        assert self.mmcif is not None
+        nonpolymer_and_chain_id_to_array = self.mmcif.non_polymer_coords
+
+        results = []
+        for (
+            nonpolymer,
+            _,
+        ), nonpolymer_array in nonpolymer_and_chain_id_to_array.items():
+            assert nonpolymer_array.coord is not None
+            chain_coords = self.atom37_positions[self.atom37_mask]
+            distance = cdist(nonpolymer_array.coord, chain_coords)
+
+            is_contact = distance < 5
+            if not is_contact.any():
+                continue
+            contacting_atoms = np.where(is_contact.any(0))[0]
+            chain_index = np.where(self.atom37_mask)[0]
+            contacting_residues = np.unique(chain_index[contacting_atoms])
+
+            result = {
+                "ligand": nonpolymer.name,
+                "ligand_id": nonpolymer.comp_id,
+                "contacting_residues": contacting_residues.tolist(),
+            }
+            results.append(result)
+        return results
 
     def select_residue_indices(
         self, indices: list[int | str], ignore_x_mismatch: bool = False
@@ -876,3 +1338,25 @@ class ProteinChain:
             raise RuntimeError(mismatch_str)
 
         return new
+
+    def to_structure_encoder_inputs(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Convert protein chain to structure encoder inputs.
+
+        Returns:
+            tuple: (coordinates, plddt, residue_index) where:
+                - coordinates: (1, L, 37, 3) tensor of atom positions
+                - plddt: (1, L) tensor of confidence scores
+                - residue_index: (1, L) tensor of residue indices
+        """
+        # Convert to tensors and add batch dimension
+        coordinates = (
+            torch.from_numpy(self.atom37_positions).float().unsqueeze(0)
+        )  # (1, L, 37, 3)
+        plddt = torch.from_numpy(self.confidence).float().unsqueeze(0)  # (1, L)
+        residue_index = (
+            torch.from_numpy(self.residue_index).long().unsqueeze(0)
+        )  # (1, L)
+
+        return coordinates, plddt, residue_index

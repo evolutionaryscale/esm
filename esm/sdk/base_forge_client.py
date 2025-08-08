@@ -1,9 +1,13 @@
+import asyncio
+import time
+from abc import ABC, abstractmethod
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
 from esm.sdk.api import ESMProteinError
+from esm.sdk.retry import retry_decorator
 from esm.utils.decoding import assemble_message
 
 
@@ -70,12 +74,14 @@ class _BaseForgeInferenceClient:
     def prepare_request(
         self,
         request: dict[str, Any],
-        potential_sequence_of_concern: bool = False,
+        potential_sequence_of_concern: bool | None = None,
         return_bytes: bool = False,
         headers: dict[str, str] = {},
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        request["potential_sequence_of_concern"] = potential_sequence_of_concern
-        headers = headers = {**self.headers, **headers}
+        if potential_sequence_of_concern is not None:
+            request["potential_sequence_of_concern"] = potential_sequence_of_concern
+
+        headers = {**self.headers, **headers}
         if return_bytes:
             headers["return-bytes"] = "true"
         return request, headers
@@ -87,7 +93,6 @@ class _BaseForgeInferenceClient:
                 error_msg=f"Failure in {endpoint}: {response.text}",
             )
         data = assemble_message(response.headers, response)
-        data = response.json()
         # Nextjs puts outputs dict under "data" key.
         # Lift it up for easier downstream processing.
         if "outputs" not in data and "data" in data:
@@ -104,42 +109,60 @@ class _BaseForgeInferenceClient:
         self,
         endpoint,
         request,
-        potential_sequence_of_concern: bool = False,
+        potential_sequence_of_concern: bool | None = None,
         params: dict[str, Any] = {},
         headers: dict[str, str] = {},
         return_bytes: bool = False,
     ):
-        request, headers = self.prepare_request(
-            request, potential_sequence_of_concern, return_bytes, headers
-        )
-        response = await self.async_client.post(
-            url=urljoin(self.url, f"/api/v1/{endpoint}"),
-            json=request,
-            params=params,
-            headers=headers,
-            timeout=self.request_timeout,
-        )
-        data = self.prepare_data(response, endpoint)
-        return data
+        try:
+            request, headers = self.prepare_request(
+                request, potential_sequence_of_concern, return_bytes, headers
+            )
+            response = await self.async_client.post(
+                url=urljoin(self.url, f"/api/v1/{endpoint}"),
+                json=request,
+                params=params,
+                headers=headers,
+                timeout=self.request_timeout,
+            )
+            data = self.prepare_data(response, endpoint)
+            return data
+        except ESMProteinError as e:
+            raise e
+        except Exception as e:
+            raise ESMProteinError(
+                error_code=500,
+                error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
+            )
 
     def _post(
         self,
         endpoint,
         request,
-        potential_sequence_of_concern: bool = False,
+        potential_sequence_of_concern: bool | None = None,
         params: dict[str, Any] = {},
         headers: dict[str, str] = {},
         return_bytes: bool = False,
     ):
-        request, headers = self.prepare_request(
-            request, potential_sequence_of_concern, return_bytes, headers
-        )
-        response = self.client.post(
-            url=urljoin(self.url, f"/api/v1/{endpoint}"),
-            json=request,
-            params=params,
-            headers=headers,
-            timeout=self.request_timeout,
-        )
-        data = self.prepare_data(response, endpoint)
-        return data
+        try:
+            request, headers = self.prepare_request(
+                request, potential_sequence_of_concern, return_bytes, headers
+            )
+            response = self.client.post(
+                url=urljoin(self.url, f"/api/v1/{endpoint}"),
+                json=request,
+                params=params,
+                headers=headers,
+                timeout=self.request_timeout,
+            )
+            data = self.prepare_data(response, endpoint)
+            return data
+        except ESMProteinError as e:
+            raise e
+        except Exception as e:
+            raise ESMProteinError(
+                error_code=500,
+                error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
+            )
+
+

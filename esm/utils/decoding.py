@@ -251,6 +251,7 @@ def assemble_message(headers: Mapping[str, str], response: Response) -> dict[str
     content_type = headers.get("Content-Type", "application/json")
     if content_type == api_constants.MIMETYPE_ES_PICKLE:
         return pickle.loads(response.content)
-    elif content_type == "application/json":
+    elif "application/json" in content_type:
+        # Can handle something like "application/json; charset=utf-8"
         return response.json()
     raise ValueError(f"Unknown Content-Type: {content_type}")

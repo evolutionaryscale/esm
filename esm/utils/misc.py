@@ -156,6 +156,37 @@ def stack_variable_length_tensors(
     return array
 
 
+def binpack(
+    tensor: torch.Tensor, sequence_id: torch.Tensor | None, pad_value: int | float
+):
+    """
+    Args:
+        tensor (Tensor): [B, L, ...]
+
+    Returns:
+        Tensor: [B_binpacked, L_binpacked, ...]
+    """
+    if sequence_id is None:
+        return tensor
+
+    num_sequences = sequence_id.max(dim=-1).values + 1
+
+    dims = sequence_id.shape + tensor.shape[2:]
+    output_tensor = torch.full(
+        dims, fill_value=pad_value, dtype=tensor.dtype, device=tensor.device
+    )
+
+    idx = 0
+    for batch_idx, (batch_seqid, batch_num_sequences) in enumerate(
+        zip(sequence_id, num_sequences)
+    ):
+        for seqid in range(batch_num_sequences):
+            mask = batch_seqid == seqid
+            output_tensor[batch_idx, mask] = tensor[idx, : mask.sum()]
+            idx += 1
+    return output_tensor
+
+
 def unbinpack(
     tensor: torch.Tensor, sequence_id: torch.Tensor | None, pad_value: int | float
 ):
@@ -280,9 +311,18 @@ def maybe_list(x, convert_nan_to_none: bool = False) -> list | None:
         return None
     if not convert_nan_to_none:
         return x.tolist()
-    nan_mask = torch.isnan(x)
-    np_arr = x.cpu().numpy().astype(object)
-    np_arr[nan_mask.cpu().numpy()] = None
+
+    # Handle both torch.tensor and np.ndarray input.
+    if isinstance(x, torch.Tensor):
+        nan_mask = torch.isnan(x).cpu().numpy()
+        np_arr = x.cpu().numpy().astype(object)
+    elif isinstance(x, np.ndarray):
+        nan_mask = np.isnan(x)
+        np_arr = x.astype(object)
+    else:
+        raise TypeError("maybe_list can only work with torch.tensor or np.ndarray.")
+
+    np_arr[nan_mask] = None
     return np_arr.tolist()
 
 
@@ -313,7 +353,6 @@ def get_chainbreak_boundaries_from_sequence(sequence: Sequence[str]) -> np.ndarr
     return chain_boundaries
 
 
-# TODO(return_bytes): remove when retiring return_bytes on SageMaker
 def deserialize_tensors(b: bytes) -> Any:
     buf = BytesIO(zstd.ZSTD_uncompress(b))
     d = torch.load(buf, map_location="cpu", weights_only=False)

@@ -2,7 +2,6 @@ import random
 
 import torch
 import torch.nn.functional as F
-
 from esm.pretrained import (
     ESM3_function_decoder_v0,
     ESM3_sm_open_v0,

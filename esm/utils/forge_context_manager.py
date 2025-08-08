@@ -7,7 +7,7 @@ from typing import Any, Callable, List
 from tqdm import tqdm
 
 from esm.sdk.api import ESMProteinError
-from esm.sdk.forge import (
+from esm.sdk.retry import (
     retry_if_specific_error,
     skip_retries_var,
 )
@@ -25,7 +25,7 @@ class AIMDRateLimiter:
         self,
         initial_concurrency: int = 32,
         min_concurrency: int = 1,
-        max_concurrency: int = 512,
+        max_concurrency: int = 64,
         step_up: int = 1,
     ):
         self.concurrency = initial_concurrency
@@ -56,8 +56,10 @@ class ForgeBatchExecutor:
     """
 
     def __init__(
-        self, max_attempts: int = 10, max_workers: int = 512, show_progress: bool = True
+        self, max_attempts: int = 10, max_workers: int = 64, show_progress: bool = True
     ):
+        if max_workers > 64:
+            raise ValueError("max_workers must be less than 64")
         self.rate_limiter = AIMDRateLimiter(max_concurrency=max_workers)
         self.max_attempts = max_attempts
         self.show_progress = show_progress
