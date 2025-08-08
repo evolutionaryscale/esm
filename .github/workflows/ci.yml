@@ -32,7 +32,9 @@ jobs:
         cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
     - name: Check formatting and typing
-      run: pixi run lint-all
+      run: |
+        set -e
+        pixi run lint-all
 
 
   test-esm:
@@ -50,7 +52,9 @@ jobs:
         cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
     - name: Run tests
-      run: pixi run cov-test
+      run: |
+        set -e
+        pixi run cov-test
 
     - name: Run Docker tests
       env:
