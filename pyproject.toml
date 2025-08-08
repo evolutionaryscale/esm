@@ -73,11 +73,12 @@ upload-wheel = "python -m twine upload --repository pypi"
 matplotlib = "*"
 pre-commit = "*"
 pytest = "*"
-"seaborn" = "*"
+pytest-cov = "*"
+seaborn = "*"
 
 [tool.pixi.feature.dev.tasks]
 lint-all = "pre-commit run --all-files --show-diff-on-failure"
-cov-test = "pytest -v --junitxml=pytest.xml | tee pytest-coverage.txt"
+cov-test = "pytest -v --junitxml=pytest.xml --cov=esm"
 
 [tool.pixi.environments]
 default = {features = [], solve-group = "default"}
