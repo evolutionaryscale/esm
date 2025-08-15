@@ -75,7 +75,7 @@ class _BaseForgeInferenceClient:
         headers: dict[str, str] = {},
     ) -> tuple[dict[str, Any], dict[str, str]]:
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
-        headers = headers = {**self.headers, **headers}
+        headers = {**self.headers, **headers}
         if return_bytes:
             headers["return-bytes"] = "true"
         return request, headers
@@ -87,7 +87,6 @@ class _BaseForgeInferenceClient:
                 error_msg=f"Failure in {endpoint}: {response.text}",
             )
         data = assemble_message(response.headers, response)
-        data = response.json()
         # Nextjs puts outputs dict under "data" key.
         # Lift it up for easier downstream processing.
         if "outputs" not in data and "data" in data:
