@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   test-precommit:
-    runs-on: ubuntu-22.04-16core
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout code
@@ -32,20 +32,11 @@ jobs:
         cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
     - name: Check formatting and typing
-      run: |
-          set -e
-          # pyright seems to do something weird at initialization that causes it to error out
-          # We can ignore the first invocation here.
-          pyright esm/__init__.py || true
-          pre-commit install
-          env NODE_OPTIONS="--max-old-space-size=16384" pre-commit run --all-files --show-diff-on-failure
-          [ -z "$(git status --porcelain)" ] && true || (echo "❌❌❌ pre-commit hook failed! A few files changed ❌❌❌]" && git status --porcelain && false)
-          git reset --hard HEAD # test without the pre-commit changes
-      shell: pixi run bash -e {0}
+      run: pixi run lint-all
 
 
   test-esm:
-    runs-on: ubuntu-22.04-16core
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout code
@@ -59,10 +50,7 @@ jobs:
         cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
     - name: Run tests
-      run: |
-        set -o pipefail
-        pytest -v --junitxml=pytest.xml tests/ | tee pytest-coverage.txt
-      shell: pixi run bash -e {0}
+      run: pixi run cov-test
 
     - name: Run Docker tests
       env:
