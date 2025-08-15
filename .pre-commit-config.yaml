@@ -1,5 +1,6 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+exclude: (fasta|pdb|cif|mds|json)$
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v3.2.0
@@ -8,6 +9,7 @@ repos:
   - id: end-of-file-fixer
   - id: check-yaml
   - id: check-added-large-files
+    exclude: pixi.lock
   - id: check-merge-conflict
 - repo: https://github.com/seddonym/import-linter
   rev: v1.12.1

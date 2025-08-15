@@ -9,6 +9,7 @@
 
 
 - [Installation ](#installation-)
+- [Available Models](#available-models-)
 - [ESM 3](#esm-3-)
   - [Quickstart for ESM3 Open](#esm3-quickstart-)
   - [ESM3 98B via Forge API](#esm3-forge)
@@ -32,6 +33,31 @@ To get started with ESM, install the python library using pip:
 ```bash
 pip install esm
 ```
+
+## Available Models <a name="available-models"></a>
+
+### ESM 3 Family
+
+| Model | Model Size | Release Date | Note |
+|-------|------------|--------------|------|
+| **Flagship Models** | | | Most users will be interested in using one of these models. |
+| esm3-large-2024-03 | 98B | 2024-03 | |
+| esm3-medium-2024-08 | 7B | 2024-08 | |
+| esm3-small-2024-08 | 1.4B | 2024-08 | |
+| **Published Models** | | | These models were used to generate all of the results in the ESM3 paper and are provided to facilitate reproducibility. |
+| esm3-large-2024-03 | 98B | 2024-03 | |
+| esm3-medium-2024-03 | 7B | 2024-03 | |
+| esm3-small-2024-03 | 1.4B | 2024-03 | |
+| **Experimental Models** | | | These models are provided for early use by researchers and are still under development. |
+| esm3-medium-multimer-2024-09 | 7B | 2024-09 | |
+
+### ESM C Models
+
+| Model | Model Size | Number of Layers | Release Date |
+|-------|------------|------------------|--------------|
+| esmc-6b-2024-12 | 6B | 80 | 2024-12 |
+| esmc-600m-2024-12 | 600M | 36 | 2024-12 |
+| esmc-300m-2024-12 | 300M | 30 | 2024-12 |
 
 ## ESM 3  <a name="esm3"></a>
 
