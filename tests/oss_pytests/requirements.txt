@@ -1,3 +1,0 @@
-esm
-pytest
-httpx # TODO(williamxi): Remove this after the esm repo is fixed
