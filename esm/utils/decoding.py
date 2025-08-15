@@ -10,24 +10,12 @@ from esm.models.function_decoder import FunctionTokenDecoder
 from esm.models.vqvae import StructureTokenDecoder
 from esm.sdk.api import ESMProtein, ESMProteinTensor
 from esm.tokenization import TokenizerCollectionProtocol
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
-from esm.tokenization.residue_tokenizer import (
-    ResidueAnnotationsTokenizer,
-)
-from esm.tokenization.sasa_tokenizer import (
-    SASADiscretizingTokenizer,
-)
-from esm.tokenization.sequence_tokenizer import (
-    EsmSequenceTokenizer,
-)
-from esm.tokenization.ss_tokenizer import (
-    SecondaryStructureTokenizer,
-)
-from esm.tokenization.structure_tokenizer import (
-    StructureTokenizer,
-)
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
+from esm.tokenization.residue_tokenizer import ResidueAnnotationsTokenizer
+from esm.tokenization.sasa_tokenizer import SASADiscretizingTokenizer
+from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
+from esm.tokenization.ss_tokenizer import SecondaryStructureTokenizer
+from esm.tokenization.structure_tokenizer import StructureTokenizer
 from esm.tokenization.tokenizer_base import EsmTokenizerBase
 from esm.utils.constants import api as api_constants
 from esm.utils.constants import esm3 as C
@@ -251,6 +239,7 @@ def assemble_message(headers: Mapping[str, str], response: Response) -> dict[str
     content_type = headers.get("Content-Type", "application/json")
     if content_type == api_constants.MIMETYPE_ES_PICKLE:
         return pickle.loads(response.content)
-    elif content_type == "application/json":
+    elif "application/json" in content_type:
+        # Can handle something like "application/json; charset=utf-8"
         return response.json()
     raise ValueError(f"Unknown Content-Type: {content_type}")

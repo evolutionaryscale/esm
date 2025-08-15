@@ -1,15 +1,10 @@
 import asyncio
 import base64
-import inspect
 import pickle
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import ContextVar
-from functools import wraps
-from typing import Any, Literal, Sequence, cast
+from typing import Any, Sequence
 
 import torch
-from attr import asdict
-from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponential
 
 from esm.sdk.api import (
     MSA,
@@ -29,16 +24,10 @@ from esm.sdk.api import (
     SamplingTrackConfig,
 )
 from esm.sdk.base_forge_client import _BaseForgeInferenceClient
+from esm.sdk.retry import retry_decorator
 from esm.utils.constants.api import MIMETYPE_ES_PICKLE
-from esm.utils.misc import (
-    deserialize_tensors,
-    maybe_list,
-    maybe_tensor,
-)
-from esm.utils.sampling import validate_sampling_config
+from esm.utils.misc import deserialize_tensors, maybe_list, maybe_tensor
 from esm.utils.types import FunctionAnnotation
-
-skip_retries_var = ContextVar("skip_retries", default=False)
 
 
 def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
@@ -47,21 +36,17 @@ def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
     return [FunctionAnnotation(*t) for t in l]
 
 
-def retry_if_specific_error(exception):
-    """
-    We only retry on specific errors.
-    Currently we retry for 502 (bad gateway) and 429 (rate limit)
-    """
-    return isinstance(exception, ESMProteinError) and exception.error_code in {
-        429,
-        502,
-        504,
-    }
+def _maybe_logits(data: dict[str, Any], track: str, return_bytes: bool = False):
+    ret = data.get("logits", {}).get(track, None)
+    # TODO(s22chan): just return this when removing return_bytes
+    return ret if ret is None or not return_bytes else maybe_tensor(ret)
 
 
-def log_retry_attempt(retry_state):
-    print(
-        f"Retrying... Attempt {retry_state.attempt_number} after {retry_state.next_action.sleep}s due to: {retry_state.outcome.result()}"
+def _maybe_b64_decode(obj, return_bytes: bool):
+    return (
+        deserialize_tensors(base64.b64decode(obj))
+        if return_bytes and isinstance(obj, str)
+        else obj
     )
 
 
@@ -75,45 +60,6 @@ def _validate_protein_tensor_input(input):
             f"Input must be an ESMProteinTensor instance, but received {type(input)} instead. "
             "Use encode() API to encode an ESMProtein into ESMProteinTensor."
         )
-
-
-def retry_decorator(func):
-    """
-    A static method that returns a retry decorator. This decorator uses the
-    instance's retry settings.
-    """
-
-    @wraps(func)
-    async def async_wrapper(instance, *args, **kwargs):
-        if skip_retries_var.get():
-            return await func(instance, *args, **kwargs)
-        retry_decorator = retry(
-            retry=retry_if_result(retry_if_specific_error),
-            wait=wait_exponential(
-                multiplier=1, min=instance.min_retry_wait, max=instance.max_retry_wait
-            ),
-            stop=stop_after_attempt(instance.max_retry_attempts),
-            before_sleep=log_retry_attempt,
-        )
-        # Apply the retry decorator to the function
-        return await retry_decorator(func)(instance, *args, **kwargs)
-
-    @wraps(func)
-    def wrapper(instance, *args, **kwargs):
-        if skip_retries_var.get():
-            return func(instance, *args, **kwargs)
-        retry_decorator = retry(
-            retry=retry_if_result(retry_if_specific_error),
-            wait=wait_exponential(
-                multiplier=1, min=instance.min_retry_wait, max=instance.max_retry_wait
-            ),
-            stop=stop_after_attempt(instance.max_retry_attempts),
-            before_sleep=log_retry_attempt,
-        )
-        # Apply the retry decorator to the function
-        return retry_decorator(func)(instance, *args, **kwargs)
-
-    return async_wrapper if inspect.iscoroutinefunction(func) else wrapper
 
 
 class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
@@ -147,12 +93,8 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         )
 
     @staticmethod
-    def _process_fold_request(
-        sequence: str,
-        model_name: str | None,
-    ):
+    def _process_fold_request(sequence: str, model_name: str | None):
         request: dict[str, Any] = {"sequence": sequence}
-
 
         request["model"] = model_name
 
@@ -164,12 +106,15 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             sequence=sequence,
             coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True),
             ptm=maybe_tensor(data.get("ptm", None)),
-            plddt=maybe_tensor(data.get("plddt", None)),
+            plddt=maybe_tensor(data.get("plddt", None), convert_none_to_nan=True),
         )
 
     @staticmethod
     def process_inverse_fold_request(
-        coordinates: torch.Tensor, config: InverseFoldingConfig, model_name: str | None
+        coordinates: torch.Tensor,
+        sequence: str | None,
+        config: InverseFoldingConfig,
+        model_name: str | None,
     ):
         inverse_folding_config = {
             "invalid_ids": config.invalid_ids,
@@ -178,6 +123,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         request = {
             "coordinates": maybe_list(coordinates, convert_nan_to_none=True),
             "inverse_folding_config": inverse_folding_config,
+            "sequence": sequence,
         }
         if model_name is not None:
             request["model"] = model_name
@@ -222,13 +168,13 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         del potential_sequence_of_concern
 
         request = self._process_fold_request(
-            sequence,
-            model_name if model_name is not None else self.model,
+            sequence, model_name if model_name is not None else self.model
         )
 
-        # Intentionally not catching errors, so our higher level logic such as automatic
-        # batch runner gets a chance to handle different errors properly.
-        data = await self._async_post("fold", request)
+        try:
+            data = await self._async_post("fold", request)
+        except ESMProteinError as e:
+            return e
 
         return self._process_fold_response(data, sequence)
 
@@ -249,16 +195,17 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             potential_sequence_of_concern: this parameter is largely deprecated
                 and ignored by the folding endpoint.
         """
+
         del potential_sequence_of_concern
 
         request = self._process_fold_request(
-            sequence,
-            model_name if model_name is not None else self.model,
+            sequence, model_name if model_name is not None else self.model
         )
 
-        # Intentionally not catching errors, so our higher level logic such as automatic
-        # batch runner gets a chance to handle different errors properly.
-        data = self._post("fold", request)
+        try:
+            data = self._post("fold", request)
+        except ESMProteinError as e:
+            return e
 
         return self._process_fold_response(data, sequence)
 
@@ -268,6 +215,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         coordinates: torch.Tensor,
         config: InverseFoldingConfig,
         potential_sequence_of_concern: bool,
+        sequence: str | None = None,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
         """Generate protein sequence from its structure.
@@ -282,14 +230,18 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             model_name: Override the client level model name if needed.
         """
         request = self.process_inverse_fold_request(
-            coordinates, config, model_name if model_name is not None else self.model
+            coordinates,
+            sequence,
+            config,
+            model_name if model_name is not None else self.model,
         )
 
-        # Intentionally not catching errors, so our higher level logic such as automatic
-        # batch runner gets a chance to handle different errors properly.
-        data = await self._async_post(
-            "inverse_fold", request, potential_sequence_of_concern
-        )
+        try:
+            data = await self._async_post(
+                "inverse_fold", request, potential_sequence_of_concern
+            )
+        except ESMProteinError as e:
+            return e
 
         return ESMProtein(sequence=data["sequence"])
 
@@ -299,6 +251,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         coordinates: torch.Tensor,
         config: InverseFoldingConfig,
         potential_sequence_of_concern: bool,
+        sequence: str | None = None,
         model_name: str | None = None,
     ) -> ESMProtein | ESMProteinError:
         """Generate protein sequence from its structure.
@@ -313,12 +266,16 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             model_name: Override the client level model name if needed.
         """
         request = self.process_inverse_fold_request(
-            coordinates, config, model_name if model_name is not None else self.model
+            coordinates,
+            sequence,
+            config,
+            model_name if model_name is not None else self.model,
         )
 
-        # Intentionally not catching errors, so our higher level logic such as automatic
-        # batch runner gets a chance to handle different errors properly.
-        data = self._post("inverse_fold", request, potential_sequence_of_concern)
+        try:
+            data = self._post("inverse_fold", request, potential_sequence_of_concern)
+        except ESMProteinError as e:
+            return e
 
         return ESMProtein(sequence=data["sequence"])
 
@@ -442,6 +399,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
     def _process_forward_and_sample_request(
         input: ESMProteinTensor, sampling_configuration: SamplingConfig, model_name: str
     ) -> dict[str, Any]:
+        from esm.utils.sampling import validate_sampling_config
+
         _validate_protein_tensor_input(input)
         validate_sampling_config(sampling_configuration, on_invalid="raise")
 
@@ -623,7 +582,9 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
             "function": config.function,
             "residue_annotations": config.residue_annotations,
             "return_embeddings": config.return_embeddings,
+            "return_mean_embedding": config.return_mean_embedding,
             "return_hidden_states": config.return_hidden_states,
+            "return_mean_hidden_states": config.return_mean_hidden_states,
             "ith_hidden_layer": config.ith_hidden_layer,
         }
 
@@ -634,34 +595,28 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
     def _process_logits_response(
         data: dict[str, Any], return_bytes: bool
     ) -> LogitsOutput:
-        def _maybe_logits(track: str):
-            ret = data.get("logits", {}).get(track, None)
-            # TODO(s22chan): just return this when removing return_bytes
-            return ret if ret is None or not return_bytes else maybe_tensor(ret)
-
-        def _maybe_b64_decode(obj):
-            return (
-                deserialize_tensors(base64.b64decode(obj))
-                if return_bytes and isinstance(obj, str)
-                else obj
-            )
-
-        logits = _maybe_b64_decode(data["logits"])
+        logits = _maybe_b64_decode(data["logits"], return_bytes)
         data["logits"] = dict(logits) if logits is not None else logits
-        data["embeddings"] = _maybe_b64_decode(data["embeddings"])
-        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"])
+        data["embeddings"] = _maybe_b64_decode(data["embeddings"], return_bytes)
+        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"], return_bytes)
 
         return LogitsOutput(
             logits=ForwardTrackData(
-                sequence=_maybe_logits("sequence"),
-                structure=_maybe_logits("structure"),
-                secondary_structure=_maybe_logits("secondary_structure"),
-                sasa=_maybe_logits("sasa"),
-                function=_maybe_logits("function"),
+                sequence=_maybe_logits(data, "sequence", return_bytes),
+                structure=_maybe_logits(data, "structure", return_bytes),
+                secondary_structure=_maybe_logits(
+                    data, "secondary_structure", return_bytes
+                ),
+                sasa=_maybe_logits(data, "sasa", return_bytes),
+                function=_maybe_logits(data, "function", return_bytes),
             ),
             embeddings=maybe_tensor(data["embeddings"]),
-            residue_annotation_logits=_maybe_logits("residue_annotation"),
+            mean_embedding=data["mean_embedding"],
+            residue_annotation_logits=_maybe_logits(
+                data, "residue_annotation", return_bytes
+            ),
             hidden_states=maybe_tensor(data["hidden_states"]),
+            mean_hidden_state=maybe_tensor(data["mean_hidden_state"]),
         )
 
     @retry_decorator
@@ -741,8 +696,8 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
             try:
                 res = self.async_generate(protein, config)
                 return await res
-            except Exception as e:
-                return ESMProteinError(500, str(e))
+            except ESMProteinError as e:
+                return e
 
         tasks = [
             safe_generate(protein, config) for protein, config in zip(inputs, configs)
@@ -1009,6 +964,7 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
         logits_config = {
             "sequence": config.sequence,
             "return_embeddings": config.return_embeddings,
+            "return_mean_embedding": config.return_mean_embedding,
             "return_hidden_states": config.return_hidden_states,
             "ith_hidden_layer": config.ith_hidden_layer,
         }
@@ -1019,26 +975,17 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
     def _process_logits_response(
         data: dict[str, Any], return_bytes: bool
     ) -> LogitsOutput:
-        def _maybe_logits(track: str):
-            ret = data.get("logits", {}).get(track, None)
-            # TODO(s22chan): just return this when removing return_bytes
-            return ret if ret is None or not return_bytes else maybe_tensor(ret)
-
-        def _maybe_b64_decode(obj):
-            return (
-                deserialize_tensors(base64.b64decode(obj))
-                if return_bytes and isinstance(obj, str)
-                else obj
-            )
-
-        logits = _maybe_b64_decode(data["logits"])
+        logits = _maybe_b64_decode(data["logits"], return_bytes)
         data["logits"] = dict(logits) if logits is not None else logits
-        data["embeddings"] = _maybe_b64_decode(data["embeddings"])
-        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"])
+        data["embeddings"] = _maybe_b64_decode(data["embeddings"], return_bytes)
+        data["hidden_states"] = _maybe_b64_decode(data["hidden_states"], return_bytes)
 
         output = LogitsOutput(
-            logits=ForwardTrackData(sequence=_maybe_logits("sequence")),
+            logits=ForwardTrackData(
+                sequence=_maybe_logits(data, "sequence", return_bytes)
+            ),
             embeddings=maybe_tensor(data["embeddings"]),
+            mean_embedding=data["mean_embedding"],
             hidden_states=maybe_tensor(data["hidden_states"]),
         )
         return output

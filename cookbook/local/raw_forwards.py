@@ -13,9 +13,7 @@ from esm.tokenization import get_esm3_model_tokenizers
 from esm.tokenization.function_tokenizer import (
     InterProQuantizedTokenizer as EsmFunctionTokenizer,
 )
-from esm.tokenization.sequence_tokenizer import (
-    EsmSequenceTokenizer,
-)
+from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import FunctionAnnotation
 

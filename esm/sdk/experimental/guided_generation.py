@@ -44,7 +44,7 @@ class ESM3GuidedDecoding:
             self._use_batch_executor = True
         else:
             raise ValueError(
-                "client must be an instance of ESM3 or ESM3ForgeInferenceClient"
+                f"client must be an instance of ESM3 or ESM3ForgeInferenceClient. Got {type(client)}"
             )
 
         self.client = client
