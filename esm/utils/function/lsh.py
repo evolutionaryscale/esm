@@ -65,7 +65,7 @@ class LSHTokenized:
         hyperplanes: dict[str, np.ndarray] = {  # type: ignore
             str(i): table.hyperplanes for i, table in enumerate(self.tables)
         }
-        np.savez(filepath, **hyperplanes)
+        np.savez(filepath, **hyperplanes)  # type: ignore
 
     def __call__(self, array):
         tokens = np.stack([table(array) for table in self.tables], 1)

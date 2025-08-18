@@ -22,7 +22,7 @@ class SequenceStructureSageMakerClient(SequenceStructureForgeInferenceClient):
 
         self._boto3_client = boto3.client(service_name="sagemaker-runtime")
 
-    def _post(self, endpoint, request, potential_sequence_of_concern):
+    def _post(self, endpoint, request, potential_sequence_of_concern: bool = False):
         request["potential_sequence_of_concern"] = potential_sequence_of_concern
         request["model"] = request.get("model", None)
         invocations_request = {
