@@ -1731,7 +1731,7 @@ packages:
 - pypi: ./
   name: esm
   version: 3.2.1
-  sha256: 5456e12b3d09b96bb576d68a9f74ea445e11a4936b72488d878d0149523b0870
+  sha256: 0126874c673ed5fa21ae9d1a040b15845227a3faca844c18ed5f8f7644e66b7e
   requires_dist:
   - torch>=2.2.0
   - torchvision
