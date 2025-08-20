@@ -2,27 +2,19 @@ from __future__ import annotations
 
 from abc import ABC
 from copy import deepcopy
-from typing import List, Sequence
+from typing import Sequence
 
 import attr
 import torch
 from attr import asdict, define
 
 import esm.utils.constants.api as C
-from esm.tokenization import (
-    TokenizerCollectionProtocol,
-    get_esm3_model_tokenizers,
-)
+from esm.tokenization import TokenizerCollectionProtocol, get_esm3_model_tokenizers
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
-from esm.utils.misc import (
-    get_chainbreak_boundaries_from_sequence,
-)
+from esm.utils.misc import get_chainbreak_boundaries_from_sequence
 from esm.utils.structure.protein_chain import ProteinChain
-from esm.utils.structure.protein_complex import (
-    SINGLE_LETTER_CHAIN_IDS,
-    ProteinComplex,
-)
+from esm.utils.structure.protein_complex import SINGLE_LETTER_CHAIN_IDS, ProteinComplex
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
@@ -42,7 +34,6 @@ class ESMProtein(ProteinType):
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
-
 
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
@@ -79,12 +70,9 @@ class ESMProtein(ProteinType):
     def from_protein_chain(
         cls, protein_chain: ProteinChain, with_annotations: bool = False
     ) -> ESMProtein:
-        # By default, we don't annotate with DSSP / SASA, which are expensive.
-        # If mkdssp is installed, we can annotate with a flag.
         if with_annotations:
             return ESMProtein(
                 sequence=protein_chain.sequence,
-                secondary_structure=protein_chain.dssp().tolist(),
                 sasa=protein_chain.sasa().tolist(),
                 function_annotations=None,
                 coordinates=torch.tensor(protein_chain.atom37_positions),
@@ -123,7 +111,8 @@ class ESMProtein(ProteinType):
         protein_complex.to_pdb(pdb_path)
 
     def to_pdb_string(self) -> str:
-        protein_chain = self.to_protein_chain()
+        # Note: This was modified to match .to_pdb() behavior. We can revisit this at some point
+        protein_chain = self.to_protein_complex().infer_oxygen()
         return protein_chain.to_pdb_string()
 
     def to_protein_chain(self) -> ProteinChain:
@@ -172,6 +161,7 @@ class ESMProtein(ProteinType):
                 if gt_chains is not None
                 else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
+                confidence=self.plddt[start:end] if self.plddt is not None else None,
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
@@ -321,8 +311,6 @@ class InverseFoldingConfig:
     temperature: float = 1.0
 
 
-
-
 ## Low Level Endpoint Types
 @define
 class SamplingTrackConfig:
@@ -382,22 +370,23 @@ class LogitsConfig:
     # Embeddings.
     return_embeddings: bool = False
     return_hidden_states: bool = False
+    return_mean_embedding: bool = False
+    return_mean_hidden_states: bool = False
     ith_hidden_layer: int = -1
-
-
-
 
 
 @define
 class LogitsOutput:
     logits: ForwardTrackData | None = None
     embeddings: torch.Tensor | None = None
+    mean_embedding: torch.Tensor | None = None
 
     # Residue annotations is multi-hot, so deserves special treatment
     # It's not a categorical distribution, but instead a bernoulli, so
     # softmax across the last dimension is _wrong_
     residue_annotation_logits: torch.Tensor | None = None
     hidden_states: torch.Tensor | None = None
+    mean_hidden_state: torch.Tensor | None = None
 
 
 @define

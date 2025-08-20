@@ -2,3 +2,4 @@ esm.egg-info
 # pixi environments
 .pixi
 *.egg-info
+*.pyc
