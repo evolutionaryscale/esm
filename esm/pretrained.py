@@ -6,14 +6,8 @@ import torch.nn as nn
 from esm.models.esm3 import ESM3
 from esm.models.esmc import ESMC
 from esm.models.function_decoder import FunctionTokenDecoder
-from esm.models.vqvae import (
-    StructureTokenDecoder,
-    StructureTokenEncoder,
-)
-from esm.tokenization import (
-    get_esm3_model_tokenizers,
-    get_esmc_model_tokenizers,
-)
+from esm.models.vqvae import StructureTokenDecoder, StructureTokenEncoder
+from esm.tokenization import get_esm3_model_tokenizers, get_esmc_model_tokenizers
 from esm.utils.constants.esm3 import data_root
 from esm.utils.constants.models import (
     ESM3_FUNCTION_DECODER_V0,

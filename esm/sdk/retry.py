@@ -2,9 +2,10 @@ import inspect
 from contextvars import ContextVar
 from functools import wraps
 
+import httpx
 from tenacity import (
     retry,
-    retry_if_exception,
+    retry_if_exception_type,
     retry_if_result,
     stop_after_attempt,
     wait_incrementing,
@@ -29,12 +30,8 @@ def retry_if_specific_error(exception):
 
 
 def log_retry_attempt(retry_state):
-    try:
-        outcome = retry_state.outcome.result()
-    except Exception:
-        outcome = retry_state.outcome.exception()
     print(
-        f"Retrying... Attempt {retry_state.attempt_number} after {retry_state.next_action.sleep}s due to: {outcome}"
+        f"Retrying... Attempt {retry_state.attempt_number} after {retry_state.next_action.sleep}s due to: {retry_state.outcome.result()}"
     )
 
 
@@ -44,18 +41,13 @@ def retry_decorator(func):
     instance's retry settings.
     """
 
-    def return_last_value(retry_state):
-        """Return the result of the last call attempt."""
-        return retry_state.outcome.result()
-
     @wraps(func)
     async def async_wrapper(instance, *args, **kwargs):
         if skip_retries_var.get():
             return await func(instance, *args, **kwargs)
         retry_decorator = retry(
-            retry_error_callback=return_last_value,
             retry=retry_if_result(retry_if_specific_error)
-            | retry_if_exception(retry_if_specific_error),
+            | retry_if_exception_type(httpx.ConnectTimeout),  # ADDED
             wait=wait_incrementing(
                 increment=1, start=instance.min_retry_wait, max=instance.max_retry_wait
             ),
@@ -70,9 +62,8 @@ def retry_decorator(func):
         if skip_retries_var.get():
             return func(instance, *args, **kwargs)
         retry_decorator = retry(
-            retry_error_callback=return_last_value,
             retry=retry_if_result(retry_if_specific_error)
-            | retry_if_exception(retry_if_specific_error),
+            | retry_if_exception_type(httpx.ConnectTimeout),  # ADDED
             wait=wait_incrementing(
                 increment=1, start=instance.min_retry_wait, max=instance.max_retry_wait
             ),
