@@ -2,19 +2,27 @@ from __future__ import annotations
 
 from abc import ABC
 from copy import deepcopy
-from typing import Sequence
+from typing import List, Sequence
 
 import attr
 import torch
 from attr import asdict, define
 
 import esm.utils.constants.api as C
-from esm.tokenization import TokenizerCollectionProtocol, get_esm3_model_tokenizers
+from esm.tokenization import (
+    TokenizerCollectionProtocol,
+    get_esm3_model_tokenizers,
+)
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
-from esm.utils.misc import get_chainbreak_boundaries_from_sequence
+from esm.utils.misc import (
+    get_chainbreak_boundaries_from_sequence,
+)
 from esm.utils.structure.protein_chain import ProteinChain
-from esm.utils.structure.protein_complex import SINGLE_LETTER_CHAIN_IDS, ProteinComplex
+from esm.utils.structure.protein_complex import (
+    SINGLE_LETTER_CHAIN_IDS,
+    ProteinComplex,
+)
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
@@ -34,6 +42,7 @@ class ESMProtein(ProteinType):
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
+
 
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
@@ -148,12 +157,35 @@ class ESMProtein(ProteinType):
             gt_chains = list(copy_annotations_from_ground_truth.chain_iter())
         else:
             gt_chains = None
+
+        # Expand pLDDT to match sequence length if needed, inserting NaN at chain breaks
+        # This handles the case where the server doesn't include chain breaks in pLDDT
+        # We should fix this in the server side.
+        if self.plddt is not None and len(self.plddt) != len(self.sequence):
+            # Only expand if there's a mismatch (likely due to chain breaks)
+            if "|" in self.sequence:
+                # Create expanded pLDDT with NaN at chain break positions
+                expanded_plddt = torch.full((len(self.sequence),), float("nan"))
+                plddt_idx = 0
+                for i, aa in enumerate(self.sequence):
+                    if aa != "|":
+                        if plddt_idx < len(self.plddt):
+                            expanded_plddt[i] = self.plddt[plddt_idx]
+                        plddt_idx += 1
+                plddt = expanded_plddt
+            else:
+                # Mismatch but no chain breaks - shouldn't happen but preserve original
+                plddt = self.plddt
+        else:
+            plddt = self.plddt
+
         pred_chains = []
         for i, (start, end) in enumerate(chain_boundaries):
             if i >= len(SINGLE_LETTER_CHAIN_IDS):
                 raise ValueError(
                     f"Too many chains to convert to ProteinComplex. The maximum number of chains is {len(SINGLE_LETTER_CHAIN_IDS)}"
                 )
+
             pred_chain = ProteinChain.from_atom37(
                 atom37_positions=coords[start:end],
                 sequence=self.sequence[start:end],
@@ -161,7 +193,7 @@ class ESMProtein(ProteinType):
                 if gt_chains is not None
                 else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
-                confidence=self.plddt[start:end] if self.plddt is not None else None,
+                confidence=plddt[start:end] if plddt is not None else None,
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
@@ -299,16 +331,11 @@ class GenerationConfig:
 
 
 @define
-class MSA:
-    # Paired MSA sequences.
-    # One would typically compute these using, for example, ColabFold.
-    sequences: list[str]
-
-
-@define
 class InverseFoldingConfig:
     invalid_ids: Sequence[int] = []
     temperature: float = 1.0
+
+
 
 
 ## Low Level Endpoint Types
@@ -373,6 +400,9 @@ class LogitsConfig:
     return_mean_embedding: bool = False
     return_mean_hidden_states: bool = False
     ith_hidden_layer: int = -1
+
+
+
 
 
 @define

@@ -1,7 +1,7 @@
 import os
 
 import pytest
-
+import torch
 from esm.sdk import client  # pyright: ignore
 from esm.sdk.api import (  # pyright: ignore
     ESMProtein,
@@ -37,6 +37,7 @@ def test_oss_esm3_client():
     logits_config = LogitsConfig(sequence=True, return_embeddings=True)
     result = esm3_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert isinstance(result.logits.sequence, torch.Tensor)
 
     sampling_config = SamplingConfig(sequence=SamplingTrackConfig(temperature=0.1))
     result = esm3_client.forward_and_sample(
@@ -53,7 +54,7 @@ def test_oss_esm3_client():
 def test_oss_esmc_client():
     assert URL is not None
 
-    sequence = "MALWMRLLPLLALLALAVUUPDPAAA"
+    sequence = "MALWMRLLPLLALLALAVPDPAAA"
     model = "esmc-300m-2024-12"
     esmc_client = client(model=model, url=URL, token=API_TOKEN)
 
@@ -69,13 +70,14 @@ def test_oss_esmc_client():
     )
     result = esmc_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert isinstance(result.logits.sequence, torch.Tensor)
 
 
 @pytest.mark.sdk
 def test_oss_sequence_structure_forge_inference_client():
     assert URL is not None
 
-    sequence = "MALWMRLLPLLALLALAVUUPDPAAA"
+    sequence = "MALWMRLLPLLALLALAVPDPAAA"
     model = "esm3-small-2024-03"
     client = SequenceStructureForgeInferenceClient(
         model=model, url=URL, token=API_TOKEN
