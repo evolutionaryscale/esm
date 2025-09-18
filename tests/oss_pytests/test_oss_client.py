@@ -53,7 +53,7 @@ def test_oss_esm3_client():
 def test_oss_esmc_client():
     assert URL is not None
 
-    sequence = "MALWMRLLPLLALLALAVUUPDPAAA"
+    sequence = "MALWMRLLPLLALLALAVPDPAAA"
     model = "esmc-300m-2024-12"
     esmc_client = client(model=model, url=URL, token=API_TOKEN)
 
@@ -75,7 +75,7 @@ def test_oss_esmc_client():
 def test_oss_sequence_structure_forge_inference_client():
     assert URL is not None
 
-    sequence = "MALWMRLLPLLALLALAVUUPDPAAA"
+    sequence = "MALWMRLLPLLALLALAVPDPAAA"
     model = "esm3-small-2024-03"
     client = SequenceStructureForgeInferenceClient(
         model=model, url=URL, token=API_TOKEN
