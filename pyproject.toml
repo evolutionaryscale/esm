@@ -44,6 +44,7 @@ dependencies = [
   "boto3",
   "pygtrie",
   "dna_features_viewer",
+  "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.1/flash_attn-2.8.1+cu12torch2.7cxx11abiFALSE-cp312-cp312-linux_x86_64.whl",
 ]
 
 # Pytest
@@ -69,6 +70,7 @@ esm = ["data/*"]
 [tool.pixi.project]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
+requires-pixi = ">=0.54.0,<0.55.0"
 
 # These are build dependencies, to ensure pip support, keep run-time deps above in `dependencies`
 [tool.pixi.dependencies]
