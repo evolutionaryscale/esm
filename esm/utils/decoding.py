@@ -140,7 +140,7 @@ def decode_structure(
     structure_decoder: StructureTokenDecoder,
     structure_tokenizer: StructureTokenizer,
     sequence: str | None = None,
-) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
     is_singleton = len(structure_tokens.size()) == 1
     if is_singleton:
         structure_tokens = structure_tokens.unsqueeze(0)
