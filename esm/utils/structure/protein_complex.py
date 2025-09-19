@@ -32,8 +32,14 @@ from esm.utils.misc import slice_python_object_as_numpy
 from esm.utils.structure.affine3d import Affine3D
 from esm.utils.structure.aligner import Aligner
 from esm.utils.structure.atom_indexer import AtomIndexer
-from esm.utils.structure.metrics import compute_gdt_ts, compute_lddt_ca
-from esm.utils.structure.mmcif_parsing import MmcifWrapper, NoProteinError
+from esm.utils.structure.metrics import (
+    compute_gdt_ts,
+    compute_lddt_ca,
+)
+from esm.utils.structure.mmcif_parsing import (
+    MmcifWrapper,
+    NoProteinError,
+)
 from esm.utils.structure.protein_chain import (
     ProteinChain,
     chain_to_ndarray,
@@ -377,11 +383,14 @@ class ProteinComplex:
         assert self.metadata.mmcif is not None
         return get_assembly_fast(self.metadata.mmcif, assembly_id=id)
 
-    def state_dict(self, backbone_only=False):
+    def state_dict(self, backbone_only=False, json_serializable=False):
         """This state dict is optimized for storage, so it turns things to fp16 whenever
         possible. Note that we also only support int32 residue indices, I'm hoping we don't
         need more than 2**32 residues..."""
         dct = {k: v for k, v in vars(self).items()}
+        if backbone_only:
+            dct["atom37_mask"][:, 3:] = False
+        dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
         for k, v in dct.items():
             if isinstance(v, np.ndarray):
                 match v.dtype:
@@ -391,9 +400,10 @@ class ProteinComplex:
                         dct[k] = v.astype(np.float16)
                     case _:
                         pass
+                if json_serializable:
+                    dct[k] = v.tolist()
             elif isinstance(v, ProteinComplexMetadata):
                 dct[k] = asdict(v)
-        dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
         dct["metadata"]["mmcif"] = None
         # These can be populated with non-serializable objects and are not needed for reconstruction
         dct.pop("atoms", None)
@@ -406,6 +416,10 @@ class ProteinComplex:
 
     @classmethod
     def from_state_dict(cls, dct):
+        for k, v in dct.items():
+            if isinstance(v, list):
+                dct[k] = np.array(v)
+
         atom37 = np.full((*dct["atom37_mask"].shape, 3), np.nan)
         atom37[dct["atom37_mask"]] = dct["atom37_positions"]
         dct["atom37_positions"] = atom37

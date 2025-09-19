@@ -1,7 +1,19 @@
+from __future__ import annotations
+
 import os
 from collections import defaultdict
+from dataclasses import is_dataclass
 from io import BytesIO
-from typing import Any, ContextManager, Sequence, TypeVar
+from typing import (
+    Any,
+    ContextManager,
+    Generator,
+    Iterable,
+    Protocol,
+    Sequence,
+    TypeVar,
+    runtime_checkable,
+)
 from warnings import warn
 
 import huggingface_hub
@@ -16,6 +28,12 @@ MAX_SUPPORTED_DISTANCE = 1e6
 
 
 TSequence = TypeVar("TSequence", bound=Sequence)
+
+
+@runtime_checkable
+class Concatable(Protocol):
+    @classmethod
+    def concat(cls, objs: list[Concatable]) -> Concatable: ...
 
 
 def slice_python_object_as_numpy(
@@ -50,6 +68,37 @@ def slice_python_object_as_numpy(
             sliced_obj = obj.__class__(sliced_obj)  # type: ignore
 
     return sliced_obj  # type: ignore
+
+
+def slice_any_object(
+    obj: TSequence, idx: int | list[int] | slice | np.ndarray
+) -> TSequence:
+    """
+    Slice a arbitrary object (like a list, string, or tuple) as if it was a numpy object. Similar to `slice_python_object_as_numpy`, but detects if it's a numpy array or Tensor and uses the existing slice method if so.
+
+    If the object is a dataclass, it will simply apply the index to the object, under the assumption that the object has correcty implemented numpy indexing.
+
+    Example:
+        >>> obj = "ABCDE"
+        >>> slice_any_object(obj, [1, 3, 4])
+        "BDE"
+
+        >>> obj = np.array([1, 2, 3, 4, 5])
+        >>> slice_any_object(obj, np.arange(5) < 3)
+        np.array([1, 2, 3])
+
+        >>> obj = ProteinChain.from_rcsb("1a3a", "A")
+        >>> slice_any_object(obj, np.arange(len(obj)) < 10)
+        # ProteinChain w/ length 10
+
+    """
+    if isinstance(obj, (np.ndarray, torch.Tensor)):
+        return obj[idx]  # type: ignore
+    elif is_dataclass(obj):
+        # if passing a dataclass, assume it implements a custom slice
+        return obj[idx]  # type: ignore
+    else:
+        return slice_python_object_as_numpy(obj, idx)
 
 
 def rbf(values, v_min, v_max, n_bins=16):
@@ -298,6 +347,8 @@ def replace_inf(data):
 def maybe_tensor(x, convert_none_to_nan: bool = False) -> torch.Tensor | None:
     if x is None:
         return None
+    if isinstance(x, torch.Tensor):
+        return x
     if isinstance(x, list) and all(isinstance(t, torch.Tensor) for t in x):
         return torch.stack(x)
     if convert_none_to_nan:
@@ -357,3 +408,90 @@ def deserialize_tensors(b: bytes) -> Any:
     buf = BytesIO(zstd.ZSTD_uncompress(b))
     d = torch.load(buf, map_location="cpu", weights_only=False)
     return d
+
+
+def join_lists(
+    lists: Sequence[Sequence[Any]], separator: Sequence[Any] | None = None
+) -> list[Any]:
+    """Joins multiple lists with separator element. Like str.join but for lists.
+
+    Example: [[1, 2], [3], [4]], separator=[0] -> [1, 2, 0, 3, 0, 4]
+
+    Args:
+        lists: Lists of elements to chain
+        separator: separators to intsert between chained output.
+    Returns:
+        Joined lists.
+    """
+    if not lists:
+        return []
+    joined = []
+    joined.extend(lists[0])
+    for l in lists[1:]:
+        if separator:
+            joined.extend(separator)
+        joined.extend(l)
+    return joined
+
+
+def iterate_with_intermediate(
+    lists: Iterable, intermediate
+) -> Generator[Any, None, None]:
+    """
+    Iterate over the iterable, yielding the intermediate value between
+    every element of the intermediate. Useful for joining objects with
+    separator tokens.
+    """
+    it = iter(lists)
+    yield next(it)
+    for l in it:
+        yield intermediate
+        yield l
+
+
+def concat_objects(objs: Sequence[Any], separator: Any | None = None):
+    """
+    Concat objects with each other using a separator token.
+
+    Supports:
+        - Concatable (objects that implement `concat` classmethod)
+        - strings
+        - lists
+        - numpy arrays
+        - torch Tensors
+
+    Example:
+        >>> foo = "abc"
+        >>> bar = "def"
+        >>> concat_objects([foo, bar], "|")
+        "abc|def"
+    """
+    match objs[0]:
+        case Concatable():
+            return objs[0].__class__.concat(objs)  # type: ignore
+        case str():
+            assert isinstance(
+                separator, str
+            ), "Trying to join strings but separator is not a string"
+            return separator.join(objs)
+        case list():
+            if separator is not None:
+                return join_lists(objs, [separator])
+            else:
+                return join_lists(objs)
+        case np.ndarray():
+            if separator is not None:
+                return np.concatenate(
+                    list(iterate_with_intermediate(objs, np.array([separator])))
+                )
+            else:
+                return np.concatenate(objs)
+        case torch.Tensor():
+            if separator is not None:
+                return torch.cat(
+                    list(iterate_with_intermediate(objs, torch.tensor([separator])))
+                )
+            else:
+                return torch.cat(objs)  # type: ignore
+        case _:
+            raise TypeError(type(objs[0]))

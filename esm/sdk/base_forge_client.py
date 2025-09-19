@@ -1,9 +1,13 @@
+import asyncio
+import time
+from abc import ABC, abstractmethod
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
 from esm.sdk.api import ESMProteinError
+from esm.sdk.retry import retry_decorator
 from esm.utils.decoding import assemble_message
 
 
@@ -80,6 +84,10 @@ class _BaseForgeInferenceClient:
         headers = {**self.headers, **headers}
         if return_bytes:
             headers["return-bytes"] = "true"
+        # __INTERNAL_BEGIN___
+        if disable_cache:
+            headers["X-Disable-Cache"] = "true"
+        # __INTERNAL_END___
         return request, headers
 
     def prepare_data(self, response, endpoint: str) -> dict[str, Any]:
@@ -112,7 +120,10 @@ class _BaseForgeInferenceClient:
     ):
         try:
             request, headers = self.prepare_request(
-                request, potential_sequence_of_concern, return_bytes, headers
+                request,
+                potential_sequence_of_concern,
+                return_bytes,
+                headers,
             )
             response = await self.async_client.post(
                 url=urljoin(self.url, f"/api/v1/{endpoint}"),
@@ -142,7 +153,10 @@ class _BaseForgeInferenceClient:
     ):
         try:
             request, headers = self.prepare_request(
-                request, potential_sequence_of_concern, return_bytes, headers
+                request,
+                potential_sequence_of_concern,
+                return_bytes,
+                headers,
             )
             response = self.client.post(
                 url=urljoin(self.url, f"/api/v1/{endpoint}"),
@@ -160,3 +174,5 @@ class _BaseForgeInferenceClient:
                 error_code=500,
                 error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
             )
+
+

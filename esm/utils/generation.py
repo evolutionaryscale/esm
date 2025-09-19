@@ -19,8 +19,13 @@ from esm.sdk.api import (
     SamplingConfig,
     SamplingTrackConfig,
 )
-from esm.tokenization import EsmTokenizerBase, TokenizerCollectionProtocol
-from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
+from esm.tokenization import (
+    EsmTokenizerBase,
+    TokenizerCollectionProtocol,
+)
+from esm.tokenization.function_tokenizer import (
+    InterProQuantizedTokenizer,
+)
 from esm.utils.constants import esm3 as C
 from esm.utils.misc import stack_variable_length_tensors
 from esm.utils.noise_schedules import NOISE_SCHEDULE_REGISTRY
@@ -43,7 +48,9 @@ def _trim_sequence_tensor_dataclass(o: Any, sequence_len: int):
 
     sliced = {}
     for k, v in attr.asdict(o, recurse=False).items():
-        if v is None:
+        if k in ["mean_hidden_state", "mean_embedding"]:
+            sliced[k] = v
+        elif v is None:
             sliced[k] = None
         elif isinstance(v, torch.Tensor):
             # Trim padding.
