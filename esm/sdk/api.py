@@ -34,6 +34,7 @@ class ESMProtein(ProteinType):
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
+    pae: torch.Tensor | None = None
 
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
