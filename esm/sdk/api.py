@@ -1,24 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import List, Sequence
+from copy import deepcopy
+from typing import Sequence
 
 import attr
 import torch
 from attr import asdict, define
 
 import esm.utils.constants.api as C
-from esm.tokenization import (
-    TokenizerCollectionProtocol,
-    get_esm3_model_tokenizers,
-)
+from esm.tokenization import TokenizerCollectionProtocol, get_esm3_model_tokenizers
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
-from esm.utils.misc import (
-    get_chainbreak_boundaries_from_sequence,
-)
+from esm.utils.misc import get_chainbreak_boundaries_from_sequence
 from esm.utils.structure.protein_chain import ProteinChain
-from esm.utils.structure.protein_complex import ProteinComplex
+from esm.utils.structure.protein_complex import SINGLE_LETTER_CHAIN_IDS, ProteinComplex
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
@@ -39,7 +35,6 @@ class ESMProtein(ProteinType):
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
     pae: torch.Tensor | None = None
-
 
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
@@ -76,12 +71,9 @@ class ESMProtein(ProteinType):
     def from_protein_chain(
         cls, protein_chain: ProteinChain, with_annotations: bool = False
     ) -> ESMProtein:
-        # By default, we don't annotate with DSSP / SASA, which are expensive.
-        # If mkdssp is installed, we can annotate with a flag.
         if with_annotations:
             return ESMProtein(
                 sequence=protein_chain.sequence,
-                secondary_structure=protein_chain.dssp().tolist(),
                 sasa=protein_chain.sasa().tolist(),
                 function_annotations=None,
                 coordinates=torch.tensor(protein_chain.atom37_positions),
@@ -109,7 +101,9 @@ class ESMProtein(ProteinType):
             secondary_structure=None,
             sasa=None,
             function_annotations=None,
-            coordinates=torch.tensor(protein_complex.atom37_positions),
+            coordinates=torch.tensor(
+                protein_complex.atom37_positions, dtype=torch.float32
+            ),
         )
 
     def to_pdb(self, pdb_path: PathOrBuffer) -> None:
@@ -118,7 +112,8 @@ class ESMProtein(ProteinType):
         protein_complex.to_pdb(pdb_path)
 
     def to_pdb_string(self) -> str:
-        protein_chain = self.to_protein_chain()
+        # Note: This was modified to match .to_pdb() behavior. We can revisit this at some point
+        protein_chain = self.to_protein_complex().infer_oxygen()
         return protein_chain.to_pdb_string()
 
     def to_protein_chain(self) -> ProteinChain:
@@ -156,14 +151,25 @@ class ESMProtein(ProteinType):
             gt_chains = None
         pred_chains = []
         for i, (start, end) in enumerate(chain_boundaries):
+            if i >= len(SINGLE_LETTER_CHAIN_IDS):
+                raise ValueError(
+                    f"Too many chains to convert to ProteinComplex. The maximum number of chains is {len(SINGLE_LETTER_CHAIN_IDS)}"
+                )
             pred_chain = ProteinChain.from_atom37(
                 atom37_positions=coords[start:end],
                 sequence=self.sequence[start:end],
-                chain_id=gt_chains[i].chain_id if gt_chains is not None else None,
+                chain_id=gt_chains[i].chain_id
+                if gt_chains is not None
+                else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
+                confidence=self.plddt[start:end] if self.plddt is not None else None,
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
+
+    def copy(self) -> "ESMProtein":
+        """Create a deep copy of the ESMProtein instance."""
+        return deepcopy(self)
 
 
 @define
@@ -245,6 +251,10 @@ class ESMProteinTensor(ProteinType):
             ).to(device),
         )
 
+    def copy(self) -> ESMProteinTensor:
+        """Create a deep copy of the ESMProteinTensor instance."""
+        return deepcopy(self)
+
 
 @define
 class ESMProteinError(Exception, ProteinType):
@@ -265,15 +275,16 @@ class GenerationConfig:
     # "random" will unmask a correct number of tokens randomly.
     # "entropy" will unmask the tokens with the lowest logit entropy first.
     strategy: str = attr.field(
-        validator=attr.validators.in_(["random", "entropy"]), default="entropy"
+        validator=attr.validators.in_(["random", "entropy"]), default="random"
     )
-    # Set this to a higher value for better generation results.
+    # Setting default to 20, as there is diminishing return for decoding steps more than 20.
     # Note that this needs to be less than or equal to the sequence length.
-    num_steps: int = 1
+    num_steps: int = 20
     temperature: float = 1.0
-    temperature_annealing: bool = False
+    temperature_annealing: bool = True
     top_p: float = 1.0
     condition_on_coordinates_only: bool = True
+    only_compute_backbone_rmsd: bool = False
 
     def use_entropy_based_unmasking_strategy(self):
         """Use entropy based unmasking strategy during generation."""
@@ -286,6 +297,13 @@ class GenerationConfig:
         self.schedule = "cosine"
         self.strategy = "random"
         self.temperature_annealing = True
+
+
+@define
+class MSA:
+    # Paired MSA sequences.
+    # One would typically compute these using, for example, ColabFold.
+    sequences: list[str]
 
 
 @define
@@ -339,6 +357,11 @@ class ForwardTrackData:
 class LogitsConfig:
     # Logits.
     sequence: bool = False
+
+    # Note that getting logits for tracks other than sequence
+    # are not supported by Forge today, due to their impractical
+    # data sizes.
+    # These are of course supported when running local OSS models.
     structure: bool = False
     secondary_structure: bool = False
     sasa: bool = False
@@ -348,6 +371,8 @@ class LogitsConfig:
     # Embeddings.
     return_embeddings: bool = False
     return_hidden_states: bool = False
+    return_mean_embedding: bool = False
+    return_mean_hidden_states: bool = False
     ith_hidden_layer: int = -1
 
 
@@ -355,12 +380,14 @@ class LogitsConfig:
 class LogitsOutput:
     logits: ForwardTrackData | None = None
     embeddings: torch.Tensor | None = None
+    mean_embedding: torch.Tensor | None = None
 
     # Residue annotations is multi-hot, so deserves special treatment
     # It's not a categorical distribution, but instead a bernoulli, so
     # softmax across the last dimension is _wrong_
     residue_annotation_logits: torch.Tensor | None = None
     hidden_states: torch.Tensor | None = None
+    mean_hidden_state: torch.Tensor | None = None
 
 
 @define
@@ -389,10 +416,20 @@ class ESM3InferenceClient(ABC):
         # if a ESMProteinTensor is provided, encode and decode are skipped
         raise NotImplementedError
 
+    async def async_generate(
+        self, input: ProteinType, config: GenerationConfig
+    ) -> ProteinType:
+        raise NotImplementedError
+
     def batch_generate(
         self, inputs: Sequence[ProteinType], configs: Sequence[GenerationConfig]
     ) -> Sequence[ProteinType]:
         # Same as generate(...), but generates a batch of proteins at once.
+        raise NotImplementedError
+
+    async def async_batch_generate(
+        self, inputs: Sequence[ProteinType], configs: Sequence[GenerationConfig]
+    ) -> Sequence[ProteinType]:
         raise NotImplementedError
 
     def encode(self, input: ESMProtein) -> ESMProteinTensor:
@@ -400,8 +437,14 @@ class ESM3InferenceClient(ABC):
         # This runs the structure_token_encoder, as well as dealing with PDB => atom37 conversion
         raise NotImplementedError
 
+    async def async_encode(self, input: ESMProtein) -> ESMProteinTensor:
+        raise NotImplementedError
+
     def decode(self, input: ESMProteinTensor) -> ESMProtein:
         # Decode is the inverse of encode, and runs a structure_token_decoder to output coordinates
+        raise NotImplementedError
+
+    async def async_decode(self, input: ESMProteinTensor) -> ESMProtein:
         raise NotImplementedError
 
     def logits(
@@ -412,12 +455,22 @@ class ESM3InferenceClient(ABC):
         # Please use forward_and_sample instead.
         raise NotImplementedError
 
+    async def async_logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        raise NotImplementedError
+
     def forward_and_sample(
         self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
     ) -> ForwardAndSampleOutput:
         # forward_and_sample runs a single model forward, sampling tokens according to `SamplingConfiguration`.
         # This is the way for power users to run ESM3. We hope to design this in a way to enable high throughput
         # inference, as well as arbitrary chain-of-though invocations of ESM3.
+        raise NotImplementedError
+
+    async def async_forward_and_sample(
+        self, input: ESMProteinTensor, sampling_configuration: SamplingConfig
+    ) -> ForwardAndSampleOutput:
         raise NotImplementedError
 
     @property
@@ -431,11 +484,22 @@ class ESMCInferenceClient(ABC):
         # Encode allows for encoding RawRepresentation into TokenizedRepresentation.
         raise NotImplementedError
 
+    async def async_encode(self, input: ESMProtein) -> ESMProteinTensor:
+        raise NotImplementedError
+
     def decode(self, input: ESMProteinTensor) -> ESMProtein:
         # Decode is the inverse of encode
         raise NotImplementedError
 
+    async def async_decode(self, input: ESMProteinTensor) -> ESMProtein:
+        raise NotImplementedError
+
     def logits(
+        self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
+    ) -> LogitsOutput:
+        raise NotImplementedError
+
+    async def async_logits(
         self, input: ESMProteinTensor, config: LogitsConfig = LogitsConfig()
     ) -> LogitsOutput:
         raise NotImplementedError

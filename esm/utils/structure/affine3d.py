@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import typing as T
+from abc import ABC
 from dataclasses import dataclass
 
 import torch
+from torch.nn import functional as F
 from typing_extensions import Self
 
 from esm.utils.misc import fp32_autocast_context
 
 
-@T.runtime_checkable
-class Rotation(T.Protocol):
+class Rotation(ABC):
     @classmethod
     def identity(cls, shape: tuple[int, ...], **tensor_kwargs) -> Self: ...
 
@@ -33,6 +34,8 @@ class Rotation(T.Protocol):
         ...
 
     def as_matrix(self) -> RotationMatrix: ...
+
+    def as_quat(self, normalize: bool = False) -> RotationQuat: ...
 
     def compose(self, other: Self) -> Self:
         # To be safe, we force users to explicitly convert between rotation types.
@@ -87,7 +90,8 @@ class RotationMatrix(Rotation):
         assert rots.shape[-1] == 3
         assert rots.shape[-2] == 3
         # Force full precision
-        self._rots = rots.to(torch.float32)
+        rots = rots.to(torch.float32)
+        self._rots = rots
 
     @classmethod
     def identity(cls, shape, **tensor_kwargs):
@@ -98,9 +102,7 @@ class RotationMatrix(Rotation):
 
     @classmethod
     def random(cls, shape, **tensor_kwargs):
-        v1 = torch.randn((*shape, 3), **tensor_kwargs)
-        v2 = torch.randn((*shape, 3), **tensor_kwargs)
-        return cls(_graham_schmidt(v1, v2))
+        return RotationQuat.random(shape, **tensor_kwargs).as_matrix()
 
     def __getitem__(self, idx: T.Any) -> RotationMatrix:
         indices = (idx,) if isinstance(idx, int) or idx is None else tuple(idx)
@@ -112,6 +114,49 @@ class RotationMatrix(Rotation):
 
     def as_matrix(self) -> RotationMatrix:
         return self
+
+    def as_quat(self, normalize: bool = False) -> RotationQuat:
+        m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(
+            self._rots.flatten(-2), dim=-1
+        )
+        q_abs = _sqrt_subgradient(
+            torch.stack(
+                [
+                    1.0 + m00 + m11 + m22,
+                    1.0 + m00 - m11 - m22,
+                    1.0 - m00 + m11 - m22,
+                    1.0 - m00 - m11 + m22,
+                ],
+                dim=-1,
+            )
+        )
+        # we produce the desired quaternion multiplied by each of r, i, j, k
+        quat_by_rijk = torch.stack(
+            [
+                x
+                for lst in [
+                    [q_abs[..., 0] ** 2, m21 - m12, m02 - m20, m10 - m01],
+                    [m21 - m12, q_abs[..., 1] ** 2, m10 + m01, m02 + m20],
+                    [m02 - m20, m10 + m01, q_abs[..., 2] ** 2, m12 + m21],
+                    [m10 - m01, m20 + m02, m21 + m12, q_abs[..., 3] ** 2],
+                ]
+                for x in lst
+            ],
+            dim=-1,
+        ).unflatten(-1, (4, 4))
+
+        # We floor here at 0.1 but the exact level is not important; if q_abs is small,
+        # the candidate won't be picked.
+        flr = torch.tensor(0.1).to(dtype=q_abs.dtype, device=q_abs.device)
+        quat_candidates = quat_by_rijk / (2.0 * q_abs[..., None].max(flr))
+
+        # if not for numerical problems, quat_candidates[i] should be same (up to a sign),
+        # forall i; we pick the best-conditioned one (with the largest denominator)
+        # We manually implement one_hot so torch.compile works
+        one_hot = torch.zeros_like(q_abs, dtype=torch.bool)
+        one_hot.scatter_(-1, q_abs.argmax(dim=-1, keepdim=True), True)
+        quat = quat_candidates[one_hot, :].reshape(q_abs.shape)
+        return RotationQuat(quat)
 
     def compose(self, other: RotationMatrix) -> RotationMatrix:
         with fp32_autocast_context(self._rots.device.type):
@@ -145,6 +190,81 @@ class RotationMatrix(Rotation):
     ) -> RotationMatrix:
         # A low eps here is necessary for good stability!
         return RotationMatrix(_graham_schmidt(x_axis, xy_plane, eps))
+
+
+class RotationQuat(Rotation):
+    def __init__(self, quats: torch.Tensor, normalized=False):
+        assert quats.shape[-1] == 4
+        self._normalized = normalized
+        # Force float32 as well
+        if normalized:
+            self._quats = F.normalize(quats.to(torch.float32), dim=-1)
+            self._quats = self._quats.where(self._quats[..., :1] >= 0, -self._quats)
+        else:
+            self._quats = quats.to(torch.float32)
+
+    @classmethod
+    def identity(cls, shape, **tensor_kwargs):
+        q = torch.ones((*shape, 4), **tensor_kwargs)
+        mult = torch.tensor([1, 0, 0, 0], device=q.device)
+        return RotationQuat(q * mult)
+
+    @classmethod
+    def random(cls, shape, **tensor_kwargs):
+        quat = torch.randn((*shape, 4), **tensor_kwargs)
+        return RotationQuat(quat, normalized=True)
+
+    def __getitem__(self, idx: T.Any) -> RotationQuat:
+        indices = (idx,) if isinstance(idx, int) or idx is None else tuple(idx)
+        return RotationQuat(self._quats[indices + (slice(None),)])
+
+    @property
+    def shape(self) -> torch.Size:
+        return self._quats.shape[:-1]
+
+    def compose(self, other: RotationQuat) -> RotationQuat:
+        with fp32_autocast_context(self._quats.device.type):
+            return RotationQuat(_quat_mult(self._quats, other._quats))
+
+    def convert_compose(self, other: Rotation):
+        return self.compose(other.as_quat())
+
+    def as_matrix(self) -> RotationMatrix:
+        q = self.normalized().tensor
+        r, i, j, k = torch.unbind(q, -1)
+        two_s = 2.0 / torch.linalg.norm(q, dim=-1)
+
+        o = torch.stack(
+            (
+                1 - two_s * (j * j + k * k),
+                two_s * (i * j - k * r),
+                two_s * (i * k + j * r),
+                two_s * (i * j + k * r),
+                1 - two_s * (i * i + k * k),
+                two_s * (j * k - i * r),
+                two_s * (i * k - j * r),
+                two_s * (j * k + i * r),
+                1 - two_s * (i * i + j * j),
+            ),
+            -1,
+        )
+        return RotationMatrix(o.reshape(q.shape[:-1] + (3, 3)))
+
+    def as_quat(self, normalize: bool = False) -> RotationQuat:
+        return self
+
+    def apply(self, p: torch.Tensor) -> torch.Tensor:
+        return _quat_rotation(self.normalized()._quats, p)
+
+    def invert(self) -> RotationQuat:
+        return RotationQuat(_quat_invert(self._quats))
+
+    @property
+    def tensor(self) -> torch.Tensor:
+        return self._quats
+
+    def normalized(self) -> RotationQuat:
+        return self if self._normalized else RotationQuat(self._quats, normalized=True)
 
 
 @dataclass(frozen=True)
@@ -222,6 +342,9 @@ class Affine3D:
     def as_matrix(self):
         return Affine3D(trans=self.trans, rot=self.rot.as_matrix())
 
+    def as_quat(self, normalize: bool = False):
+        return Affine3D(trans=self.trans, rot=self.rot.as_quat(normalize))
+
     def compose(self, other: "Affine3D", autoconvert: bool = False):
         rot = self.rot
         new_rot = (rot.convert_compose if autoconvert else rot.compose)(other.rot)
@@ -271,6 +394,13 @@ class Affine3D:
                 # Assume tensor 4x4 for backward compat with alphafold
                 trans = t[..., :3, 3]
                 rot = RotationMatrix(t[..., :3, :3])
+            case 6:
+                # Assume quaternion representation with real part = 1
+                trans = t[..., -3:]
+                rot = RotationQuat(F.pad(t[..., :3], (1, 0), value=1))
+            case 7:
+                trans = t[..., -3:]
+                rot = RotationQuat(t[..., :4])
             case 12:
                 trans = t[..., -3:]
                 rot = RotationMatrix(t[..., :-3].unflatten(-1, (3, 3)))
@@ -303,6 +433,62 @@ class Affine3D:
         if dim < 0:
             dim = len(affines[0].shape) + dim
         return Affine3D.from_tensor(torch.cat([x.tensor for x in affines], dim=dim))
+
+
+def _quat_mult(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """
+    Multiply two quaternions.
+    Usual torch rules for broadcasting apply.
+
+    Args:
+        a: Quaternions as tensor of shape (..., 4), real part first.
+        b: Quaternions as tensor of shape (..., 4), real part first.
+
+    Returns:
+        The product of a and b, a tensor of quaternions shape (..., 4).
+    """
+    aw, ax, ay, az = torch.unbind(a, -1)
+    bw, bx, by, bz = torch.unbind(b, -1)
+    ow = aw * bw - ax * bx - ay * by - az * bz
+    ox = aw * bx + ax * bw + ay * bz - az * by
+    oy = aw * by - ax * bz + ay * bw + az * bx
+    oz = aw * bz + ax * by - ay * bx + az * bw
+    return torch.stack((ow, ox, oy, oz), -1)
+
+
+def _quat_rotation(q: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+    """
+    Rotates p by quaternion q. Usual torch rules for broadcasting apply.
+
+    Args:
+        q: Quaternions as tensor of shape (..., 4), real part first.
+        p: Points as tensor of shape (..., 3)
+
+    Returns:
+        The rotated version of p, of shape (..., 3)
+    """
+    aw, ax, ay, az = torch.unbind(q, -1)
+    bx, by, bz = torch.unbind(p, -1)
+    # fmt: off
+    ow =         - ax * bx - ay * by - az * bz
+    ox = aw * bx           + ay * bz - az * by
+    oy = aw * by - ax * bz           + az * bx
+    oz = aw * bz + ax * by - ay * bx
+    # fmt: on
+    q_mul_pts = torch.stack((ow, ox, oy, oz), -1)
+    return _quat_mult(q_mul_pts, _quat_invert(q))[..., 1:]
+
+
+def _quat_invert(q: torch.Tensor):
+    return q * torch.tensor([1, -1, -1, -1], device=q.device)
+
+
+def _sqrt_subgradient(x: torch.Tensor) -> torch.Tensor:
+    # Returns torch.sqrt(torch.max(0, x)) but with a zero subgradient where x is 0.
+    ret = torch.zeros_like(x)
+    positive_mask = x > 0
+    ret[positive_mask] = torch.sqrt(x[positive_mask])
+    return ret
 
 
 def _graham_schmidt(x_axis: torch.Tensor, xy_plane: torch.Tensor, eps: float = 1e-12):

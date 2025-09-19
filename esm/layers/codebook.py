@@ -17,7 +17,7 @@ class EMACodebook(nn.Module):
         super().__init__()
         self.register_buffer("embeddings", torch.randn(n_codes, embedding_dim))
         self.register_buffer("N", torch.zeros(n_codes))
-        self.register_buffer("z_avg", self.embeddings.data.clone())
+        self.register_buffer("z_avg", self.embeddings.data.clone())  # pyright: ignore[reportCallIssue]
 
         self.n_codes = n_codes
         self.embedding_dim = embedding_dim
@@ -50,9 +50,9 @@ class EMACodebook(nn.Module):
         _k_rand = y[torch.randperm(y.shape[0])][: self.n_codes]
         if dist.is_initialized():
             dist.broadcast(_k_rand, 0)
-        self.embeddings.data.copy_(_k_rand)
-        self.z_avg.data.copy_(_k_rand)
-        self.N.data.copy_(torch.ones(self.n_codes))
+        self.embeddings.data.copy_(_k_rand)  # pyright: ignore[reportCallIssue]
+        self.z_avg.data.copy_(_k_rand)  # pyright: ignore[reportCallIssue]
+        self.N.data.copy_(torch.ones(self.n_codes))  # pyright: ignore[reportCallIssue]
 
     def forward(self, z):
         # z: [b, t, c]
@@ -62,14 +62,17 @@ class EMACodebook(nn.Module):
         flat_inputs = z.view(-1, self.embedding_dim)
         distances = (
             (flat_inputs**2).sum(dim=1, keepdim=True)
-            - 2 * flat_inputs @ self.embeddings.t()
-            + (self.embeddings.t() ** 2).sum(dim=0, keepdim=True)
+            - 2 * flat_inputs @ self.embeddings.t()  # pyright: ignore[reportCallIssue]
+            + (self.embeddings.t() ** 2).sum(dim=0, keepdim=True)  # pyright: ignore[reportCallIssue]
         )  # [bt, c]
 
         encoding_indices = torch.argmin(distances, dim=1)
         encoding_indices = encoding_indices.view(*z.shape[:2])  # [b, t, ncode]
 
-        embeddings = F.embedding(encoding_indices, self.embeddings)  # [b, t, c]
+        embeddings = F.embedding(
+            encoding_indices,
+            self.embeddings,  # pyright: ignore[reportArgumentType]
+        )  # [b, t, c] # pyright: ignore[reportArgumentType]
 
         commitment_loss = 0.25 * F.mse_loss(z, embeddings.detach())
 
@@ -81,8 +84,8 @@ class EMACodebook(nn.Module):
         return embeddings_st, encoding_indices, commitment_loss
 
     def dictionary_lookup(self, encodings):
-        embeddings = F.embedding(encodings, self.embeddings)
+        embeddings = F.embedding(encodings, self.embeddings)  # pyright: ignore[reportArgumentType]
         return embeddings
 
     def soft_codebook_lookup(self, weights: torch.Tensor) -> torch.Tensor:
-        return weights @ self.embeddings
+        return weights @ self.embeddings  # pyright: ignore[reportOperatorIssue]

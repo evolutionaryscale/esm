@@ -194,7 +194,7 @@ def compute_rmsd_no_alignment(
         mean_squared_error = diff.square().view(diff.size(0), -1, 9).mean(dim=-1)
     else:
         mean_squared_error = diff.square().sum(dim=(1, 2)) / (
-            num_valid_atoms.squeeze(-1) * 3
+            num_valid_atoms.squeeze(-1)
         )
 
     rmsd = torch.sqrt(mean_squared_error)

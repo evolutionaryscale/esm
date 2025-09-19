@@ -1,4 +1,15 @@
+# ESM
+
+<div align="center">
+  <img src="_assets/logo.png" width="50"/>
+
+[ESM3](https://www.science.org/doi/10.1126/science.ads0018) &sdot; [ESM C](https://www.evolutionaryscale.ai/blog/esm-cambrian) &sdot;
+[Slack](https://bit.ly/3FKwcWd) &sdot; [Tutorials](https://github.com/evolutionaryscale/esm/tree/main/cookbook/tutorials) <br>
+</div>
+
+
 - [Installation ](#installation-)
+- [Available Models](#available-models-)
 - [ESM 3](#esm-3-)
   - [Quickstart for ESM3 Open](#esm3-quickstart-)
   - [ESM3 98B via Forge API](#esm3-forge)
@@ -23,6 +34,31 @@ To get started with ESM, install the python library using pip:
 pip install esm
 ```
 
+## Available Models <a name="available-models"></a>
+
+### ESM 3 Family
+
+| Model | Model Size | Release Date | Note |
+|-------|------------|--------------|------|
+| **Flagship Models** | | | Most users will be interested in using one of these models. |
+| esm3-large-2024-03 | 98B | 2024-03 | |
+| esm3-medium-2024-08 | 7B | 2024-08 | |
+| esm3-small-2024-08 | 1.4B | 2024-08 | |
+| **Published Models** | | | These models were used to generate all of the results in the ESM3 paper and are provided to facilitate reproducibility. |
+| esm3-large-2024-03 | 98B | 2024-03 | |
+| esm3-medium-2024-03 | 7B | 2024-03 | |
+| esm3-small-2024-03 | 1.4B | 2024-03 | |
+| **Experimental Models** | | | These models are provided for early use by researchers and are still under development. |
+| esm3-medium-multimer-2024-09 | 7B | 2024-09 | |
+
+### ESM C Models
+
+| Model | Model Size | Number of Layers | Release Date |
+|-------|------------|------------------|--------------|
+| esmc-6b-2024-12 | 6B | 80 | 2024-12 |
+| esmc-600m-2024-12 | 600M | 36 | 2024-12 |
+| esmc-300m-2024-12 | 300M | 30 | 2024-12 |
+
 ## ESM 3  <a name="esm3"></a>
 
 [ESM3](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model) is a frontier generative model for biology, able to jointly reason across three fundamental biological properties of proteins: sequence, structure, and function. These three data modalities are represented as tracks of discrete tokens at the input and output of ESM3. You can present the model with a combination of partial inputs across the tracks, and ESM3 will provide output predictions for all the tracks.
@@ -33,15 +69,11 @@ ESM3 is a _generative_ masked language model. You can prompt it with partial seq
 <img src="_assets/esm3_diagram.png" alt="ESM3 Diagram" width="400" />
 
 The ESM3 architecture is highly scalable due to its transformer backbone and all-to-all reasoning over discrete token sequences. At its largest scale, ESM3 was trained with 1.07e24 FLOPs on 2.78 billion proteins and 771 billion unique tokens, and has 98 billion parameters.
-Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the pre-print (Hayes et al., 2024)](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model).
+Learn more by reading the [blog post](https://www.evolutionaryscale.ai/blog/esm3-release) and [the paper (Hayes et al., 2024)](https://www.science.org/doi/10.1126/science.ads0018).
 
 ESM3-open, with 1.4B parameters, is the smallest and fastest model in the family.
 
 ### Quickstart for ESM3-open <a name="esm3-quickstart"></a>
-
-```
-pip install esm
-```
 
 The weights are stored on HuggingFace Hub under [HuggingFace/EvolutionaryScale/esm3](https://huggingface.co/EvolutionaryScale/esm3).
 
@@ -97,10 +129,23 @@ model: ESM3InferenceClient = esm.sdk.client("esm3-medium-2024-08", token="<your 
 and the exact same code will work.
 This enables a seamless transition from smaller and faster models, to our largest and most capable protein language models for protein design work.
 
+### Async Forge Client
+The Forge client supports asynchronous API calls for improved performance when making multiple requests. Async methods follow the same naming convention as their synchronous counterparts, with `async_` prepended to the method name. For example:
+
+```py
+model = esm.sdk.client("esm3-medium-2024-08", token="<your forge token>")
+
+protein = await model.async_generate(protein, GenerationConfig(track="sequence"))
+```
+
 ### ESM3 Example Usage
  <a name="esm3-example"></a>
 
-Check out our [tutorials](./cookbook/tutorials) to learn how to use ESM3.
+[Generating a novel GFP with chain of thought generation using ESM3](./cookbook/tutorials/3_gfp_design.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/3_gfp_design.ipynb)
+
+[Advanced prompting with ESM3 input tracks](./cookbook/tutorials/4_forge_generate.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/4_forge_generate.ipynb)
+
+
 
 ## ESM C <a name="esm-c"></a>
 [ESM Cambrian](https://www.evolutionaryscale.ai/blog/esm-cambrian) is a parallel model family to our flagship ESM3 generative models. While ESM3 focuses on controllable generation of proteins, ESM C focuses on creating representations of the underlying biology of proteins.
@@ -154,6 +199,36 @@ print(logits_output.logits, logits_output.embeddings)
 
 Remember to replace `<your forge token>` with your actual Forge access token.
 
+### Forge Batch Executor
+
+For jobs that require processing multiple inputs, the Forge Batch Executor provides a streamlined and way to execute them concurrently and efficiently while respecting rate limits and adapting to request latency.
+
+```py
+from esm.sdk.forge import ESM3ForgeInferenceClient
+from esm.sdk.api import ESMProtein, LogitsConfig
+from esm.sdk import batch_executor
+
+def embed_sequence(client: ESM3ForgeInferenceClient, sequence: str) -> LogitsOutput:
+    protein = ESMProtein(sequence=sequence)
+    protein_tensor = client.encode(protein)
+    if isinstance(protein_tensor, ESMProteinError):
+        raise protein_tensor
+    output = client.logits(protein_tensor, LogitsConfig(sequence=True, return_embeddings=True))
+    return output
+
+sequences = ["A", "AA", "AAA"]
+client =  ESM3ForgeInferenceClient(model="esmc-6b-2024-12", url="https://forge.evolutionaryscale.ai", token="<your forge token>")
+
+# Usage Example:
+# To execute a batch job, wrap your function inside the batch executor context manager.
+# Syntax:
+# with batch_executor() as executor:
+#     outputs = executor.execute_batch(user_func=<your_function>, **kwargs)
+
+with batch_executor() as executor:
+    outputs = executor.execute_batch(user_func=embed_sequence, client=client, sequence=sequences)
+```
+
 ### ESM C via SageMaker for Commercial Use  <a name="esm-c-sagemaker"></a>
 
 ESM C models are also available on Amazon SageMaker under the [Cambrian Inference Clickthrough License Agreement](https://www.evolutionaryscale.ai/policies/cambrian-inference-clickthrough-license-agreement).
@@ -200,7 +275,7 @@ print(logits_output.logits, logits_output.embeddings)
 ### ESM C Example Usage
  <a name="esm-c-example"></a>
 
-Check out our [tutorials](./cookbook/tutorials) to learn how to use ESM C.
+[Embedding a sequence using ESM C](./cookbook/tutorials/2_embed.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/evolutionaryscale/esm/blob/main/cookbook/tutorials/2_embed.ipynb)
 
 ## Responsible Development <a name="responsible-development"></a>
 
@@ -213,7 +288,7 @@ The core tenets of our framework are
 - We will adopt risk mitigation strategies and precautionary guardrails
 - We will work with stakeholders in government, policy, and civil society to keep them informed
 
-With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.evolutionaryscale.ai/papers/esm3-simulating-500-million-years-of-evolution-with-a-language-model)
+With this in mind, we have performed a variety of mitigations for `esm3-sm-open-v1`, detailed in our [paper](https://www.science.org/doi/10.1126/science.ads0018)
 
 ## Licenses  <a name="licenses"></a>
 
@@ -227,10 +302,10 @@ If you use ESM in your work, please cite one of the following:
 @article {hayes2024simulating,
 	author = {Hayes, Thomas and Rao, Roshan and Akin, Halil and Sofroniew, Nicholas J. and Oktay, Deniz and Lin, Zeming and Verkuil, Robert and Tran, Vincent Q. and Deaton, Jonathan and Wiggert, Marius and Badkundri, Rohil and Shafkat, Irhum and Gong, Jun and Derry, Alexander and Molina, Raul S. and Thomas, Neil and Khan, Yousuf A. and Mishra, Chetan and Kim, Carolyn and Bartie, Liam J. and Nemeth, Matthew and Hsu, Patrick D. and Sercu, Tom and Candido, Salvatore and Rives, Alexander},
 	title = {Simulating 500 million years of evolution with a language model},
-	year = {2024},
-	doi = {10.1101/2024.07.01.600583},
-	URL = {https://doi.org/10.1101/2024.07.01.600583},
-	journal = {bioRxiv}
+	year = {2025},
+	doi = {10.1126/science.ads0018},
+	URL = {http://dx.doi.org/10.1126/science.ads0018},
+	journal = {Science}
 }
 ```
 

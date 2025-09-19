@@ -19,13 +19,8 @@ from esm.sdk.api import (
     SamplingConfig,
     SamplingTrackConfig,
 )
-from esm.tokenization import (
-    EsmTokenizerBase,
-    TokenizerCollectionProtocol,
-)
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
+from esm.tokenization import EsmTokenizerBase, TokenizerCollectionProtocol
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
 from esm.utils.constants import esm3 as C
 from esm.utils.misc import stack_variable_length_tensors
 from esm.utils.noise_schedules import NOISE_SCHEDULE_REGISTRY
@@ -134,6 +129,7 @@ def _make_masked_inputs(
     track: str, sequence_length: int, tokenizers: TokenizerCollectionProtocol
 ):
     get_tokenizer: Callable[[str], EsmTokenizerBase] = lambda s: getattr(tokenizers, s)
+    has_tokenizer: Callable[[str], bool] = lambda s: hasattr(tokenizers, s)
 
     if track == "coordinates":
         dims = (sequence_length, 3, 3)
@@ -155,12 +151,15 @@ def _make_masked_inputs(
         masked_tokens = torch.full(dims, 0.0)
     elif track == "attention_mask":
         masked_tokens = torch.full(dims, 1, dtype=torch.bool)
-    else:
+    elif has_tokenizer(track):
         masked_tokens = torch.full(
             dims, get_tokenizer(track).mask_token_id, dtype=torch.long
         )
         masked_tokens[0] = get_tokenizer(track).bos_token_id
         masked_tokens[-1] = get_tokenizer(track).eos_token_id
+    else:
+        # Does not know how to create the dummy all masked input.
+        return None
 
     return masked_tokens
 
@@ -173,14 +172,31 @@ def _stack_protein_tensors(
 ) -> _BatchedESMProteinTensor:
     o = _BatchedESMProteinTensor()
 
+    def _maybe_mock_input(fn, t, l):
+        if t is not None:
+            return t
+
+        # Try create dummy masked input for this prompt.
+        t = _make_masked_inputs(fn, l, tokenizers)
+        if t is not None:
+            t = t.to(device)
+
+        return t
+
     def _stack_field(fn: str):
         tensors = [getattr(tokens, fn) for tokens in input_tokens]
 
         # Create all mask mock inputs for any tensors that are None.
         tensors = [
-            t if t is not None else _make_masked_inputs(fn, l, tokenizers).to(device)
-            for t, l in zip(tensors, sequence_lengths)
+            _maybe_mock_input(fn, t, l) for t, l in zip(tensors, sequence_lengths)
         ]
+
+        # Handle any track that has all None as the input.
+        # We can't meaningfully stack tensors in this case, so simply batched
+        # them as None in _BatchedESMProteinTensor.
+        if all([t is None for t in tensors]):
+            setattr(o, fn, None)
+            return
 
         if fn == "coordinates":
             mask_token_id = torch.inf
@@ -191,7 +207,8 @@ def _stack_protein_tensors(
             o,
             fn,
             stack_variable_length_tensors(
-                sequences=tensors, constant_value=mask_token_id
+                sequences=tensors,  # type: ignore
+                constant_value=mask_token_id,
             ),
         )
 

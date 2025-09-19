@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import random
 import re
 import warnings
 from dataclasses import asdict, dataclass, replace
@@ -18,24 +19,28 @@ import msgpack_numpy
 import numpy as np
 import torch
 from biotite.database import rcsb
+from biotite.file import InvalidFileError
 from biotite.structure.io.pdb import PDBFile
+from biotite.structure.io.pdbx import CIFCategory, CIFColumn, CIFData, CIFFile
+from biotite.structure.io.pdbx import set_structure as set_structure_pdbx
+from biotite.structure.io.pdbx.convert import _get_transformations, get_structure
+from biotite.structure.util import matrix_rotate
+from scipy.spatial import KDTree
 
 from esm.utils import residue_constants
-from esm.utils.constants import esm3 as esm3_c
 from esm.utils.misc import slice_python_object_as_numpy
 from esm.utils.structure.affine3d import Affine3D
 from esm.utils.structure.aligner import Aligner
-from esm.utils.structure.metrics import (
-    compute_gdt_ts,
-    compute_lddt_ca,
-)
+from esm.utils.structure.atom_indexer import AtomIndexer
+from esm.utils.structure.metrics import compute_gdt_ts, compute_lddt_ca
+from esm.utils.structure.mmcif_parsing import MmcifWrapper, NoProteinError
 from esm.utils.structure.protein_chain import (
-    PathOrBuffer,
     ProteinChain,
-)
-from esm.utils.structure.protein_structure import (
+    chain_to_ndarray,
     index_by_atom_name,
+    infer_CB,
 )
+from esm.utils.types import PathOrBuffer
 
 msgpack_numpy.patch()
 
@@ -44,35 +49,72 @@ SINGLE_LETTER_CHAIN_IDS = (
 )
 
 
-def protein_chain_to_protein_complex(chain: ProteinChain) -> ProteinComplex:
-    if "|" not in chain.sequence:
-        return ProteinComplex.from_chains([chain])
-    chain_breaks = np.array(list(chain.sequence)) == "|"
-    chain_break_inds = np.where(chain_breaks)[0]
-    chain_break_inds = np.concatenate([[0], chain_break_inds, [len(chain)]])
-    chain_break_inds = np.array(list(zip(chain_break_inds[:-1], chain_break_inds[1:])))
-    complex_chains = []
-    for start, end in chain_break_inds:
-        if start != 0:
-            start += 1
-        complex_chains.append(chain[start:end])
-    complex_chains = [
-        ProteinChain.from_atom37(
-            chain.atom37_positions,
-            sequence=chain.sequence,
-            chain_id=SINGLE_LETTER_CHAIN_IDS[i],
-            entity_id=i,
-        )
-        for i, chain in enumerate(complex_chains)
-    ]
-    return ProteinComplex.from_chains(complex_chains)
+def _parse_operation_expression(expression):
+    """
+    Get successive operation steps (IDs) for the given
+    ``oper_expression``.
+    Form the cartesian product, if necessary.
+    Copied from biotite and fixed a bug
+    """
+    # Split groups by parentheses:
+    # use the opening parenthesis as delimiter
+    # and just remove the closing parenthesis
+    expressions_per_step = expression.replace(")", "").split("(")
+    expressions_per_step = [e for e in expressions_per_step if len(e) > 0]
+    # Important: Operations are applied from right to left
+    expressions_per_step.reverse()
+
+    operations = []
+    for expr in expressions_per_step:
+        cur_expr = expr.split(",")
+        cur_op = []
+        # Deal with e='1-10,20-30,40-50' type expressions
+        for e in cur_expr:
+            if "-" in e:
+                first, last = e.split("-")
+                cur_op.extend(str(id) for id in range(int(first), int(last) + 1))
+            else:
+                cur_op.append(e)
+        operations.append(cur_op)
+
+    # Cartesian product of operations
+    return list(itertools.product(*operations))
+
+
+def _apply_transformations_fast(chains, transformation_dict, operations):
+    """
+    Get subassembly by applying the given operations to the input
+    structure containing affected asym IDs.
+    """
+    # Additional first dimesion for 'structure.repeat()'
+    results = []
+
+    # Apply corresponding transformation for each copy in the assembly
+    for c in chains:
+        for operation in operations:
+            coord = c.atom37_positions.copy()
+            # Execute for each transformation step
+            # in the operation expression
+            for op_step in operation:
+                T = transformation_dict[op_step]
+                # Rotate
+                coord = matrix_rotate(coord, T.rotation)
+                # Translate
+                coord += T.target_translation
+            new_chain = replace(c, atom37_positions=coord)
+            results.append(new_chain)
+
+    return results
 
 
 @dataclass
 class ProteinComplexMetadata:
     entity_lookup: dict[int, int]
     chain_lookup: dict[int, str]
-    chain_boundaries: list[tuple[int, int]]
+    mmcif: MmcifWrapper | None = None
+    # This is a dictionary that maps assembly ids to the list of unique chains
+    # in that assembly. Allows for usage of `switch_assembly`.
+    assembly_composition: dict[str, list[str]] | None = None
 
 
 @dataclass
@@ -100,19 +142,7 @@ class DockQResult:
     aligned_rmsd: float
 
 
-class AtomIndexer:
-    def __init__(self, structure: ProteinComplex, property: str, dim: int):
-        self.structure = structure
-        self.property = property
-        self.dim = dim
-
-    def __getitem__(self, atom_names: str | list[str]) -> np.ndarray:
-        return index_by_atom_name(
-            getattr(self.structure, self.property), atom_names, self.dim
-        )
-
-
-@dataclass
+@dataclass(frozen=True)
 class ProteinComplex:
     """Dataclass with atom37 representation of an entire protein complex."""
 
@@ -126,6 +156,7 @@ class ProteinComplex:
     atom37_positions: np.ndarray
     atom37_mask: np.ndarray
     confidence: np.ndarray
+    # This metadata is parsed from the MMCIF file. For synthetic data, we do a best effort.
     metadata: ProteinComplexMetadata
 
     def __post_init__(self):
@@ -195,15 +226,59 @@ class ProteinComplex:
     def __len__(self):
         return len(self.sequence)
 
+    @property
+    def num_chains(self):
+        return len(self.chain_boundaries)
+
     @cached_property
     def atoms(self) -> AtomIndexer:
         return AtomIndexer(self, property="atom37_positions", dim=-2)
 
+    @cached_property
+    def atom_mask(self) -> AtomIndexer:
+        return AtomIndexer(self, property="atom37_mask", dim=-1)
+
+    @cached_property
+    def chain_lengths(self) -> np.ndarray:
+        return np.diff(self.chain_boundaries, axis=1).flatten()
+
+    @cached_property
+    def chain_boundaries(self) -> list[tuple[int, int]]:
+        cb = [-1]
+        for i, s in enumerate(self.sequence):
+            if s == "|":
+                cb.append(i)
+        cb.append(len(self))
+        return [(cb[i] + 1, cb[i + 1]) for i in range(len(cb) - 1)]
+
+    def get_chain_by_index(self, index: int) -> ProteinChain:
+        try:
+            start, end = self.chain_boundaries[index]
+            return self[start:end].as_chain()
+        except IndexError:
+            raise IndexError(f"Chain index {index} out of bounds")
+
+    def get_chain_by_id(
+        self, chain_id: str, sample_chain_if_duplicate: bool = True
+    ) -> ProteinChain:
+        valid_indices = [
+            index
+            for index, id_of_index in self.metadata.chain_lookup.items()
+            if id_of_index == chain_id
+        ]
+        if not valid_indices:
+            raise KeyError(f"Chain ID {chain_id} not found")
+        if sample_chain_if_duplicate:
+            index_to_return = random.choice(valid_indices)
+            return self.get_chain_by_index(index_to_return)
+        else:
+            if len(valid_indices) > 1:
+                raise ValueError(f"Multiple chains with chain ID {chain_id} found")
+            return self.get_chain_by_index(valid_indices[0])
+
     def chain_iter(self) -> Iterable[ProteinChain]:
-        boundaries = [i for i, s in enumerate(self.sequence) if s == "|"]
-        boundaries = [-1, *boundaries, len(self)]
-        for i in range(len(boundaries) - 1):
-            c = self.__getitem__(slice(boundaries[i] + 1, boundaries[i + 1]))
+        for start, end in self.chain_boundaries:
+            c = self[start:end]
             yield c.as_chain()
 
     def as_chain(self, force_conversion: bool = False) -> ProteinChain:
@@ -237,6 +312,7 @@ class ProteinComplex:
             residue_index=self.residue_index,
             insertion_code=self.insertion_code,
             confidence=self.confidence,
+            mmcif=self.metadata.mmcif,
         )
 
     @classmethod
@@ -252,12 +328,6 @@ class ProteinComplex:
                 continue
             chains.append(ProteinChain.from_atomarray(chain, id))
         return ProteinComplex.from_chains(chains)
-
-    @classmethod
-    def from_rcsb(cls, pdb_id: str):
-        """Fetch a protein complex from the RCSB PDB database."""
-        f: io.StringIO = rcsb.fetch(pdb_id, "pdb")  # type: ignore
-        return cls.from_pdb(f, id=pdb_id)
 
     def to_pdb(self, path: PathOrBuffer, include_insertions: bool = True):
         atom_array = None
@@ -284,12 +354,28 @@ class ProteinComplex:
         ids = SINGLE_LETTER_CHAIN_IDS
         chains = []
         for i, chain in enumerate(self.chain_iter()):
-            chain.chain_id = ids[i]
+            chain = replace(chain, chain_id=ids[i])
             if i > len(ids):
                 raise RuntimeError("Too many chains to write to PDB file")
             chains.append(chain)
 
         return ProteinComplex.from_chains(chains)
+
+    def find_assembly_ids_with_chain(self, id: str) -> list[str]:
+        good_chains = []
+        if (comp := self.metadata.assembly_composition) is not None:
+            for assembly_id, chain_ids in comp.items():
+                if id in chain_ids:
+                    good_chains.append(assembly_id)
+        else:
+            raise ValueError(
+                "Cannot switch assemblies on this ProteinComplex, you must create the assembly from mmcif to support this"
+            )
+        return good_chains
+
+    def switch_assembly(self, id: str):
+        assert self.metadata.mmcif is not None
+        return get_assembly_fast(self.metadata.mmcif, assembly_id=id)
 
     def state_dict(self, backbone_only=False):
         """This state dict is optimized for storage, so it turns things to fp16 whenever
@@ -308,6 +394,11 @@ class ProteinComplex:
             elif isinstance(v, ProteinComplexMetadata):
                 dct[k] = asdict(v)
         dct["atom37_positions"] = dct["atom37_positions"][dct["atom37_mask"]]
+        dct["metadata"]["mmcif"] = None
+        # These can be populated with non-serializable objects and are not needed for reconstruction
+        dct.pop("atoms", None)
+        dct.pop("atom_mask", None)
+        dct.pop("per_chain_kd_trees", None)
         return dct
 
     def to_blob(self, backbone_only=False) -> bytes:
@@ -322,6 +413,10 @@ class ProteinComplex:
             k: (v.astype(np.float32) if k in ["atom37_positions", "confidence"] else v)
             for k, v in dct.items()
         }
+        if "chain_boundaries" in dct:
+            del dct["chain_boundaries"]
+        if "chain_boundaries" in dct["metadata"]:
+            del dct["metadata"]["chain_boundaries"]
         dct["metadata"] = ProteinComplexMetadata(**dct["metadata"])
         return cls(**dct)
 
@@ -342,13 +437,45 @@ class ProteinComplex:
         )
 
     @classmethod
-    def from_chains(cls, chains: Sequence[ProteinChain]):
+    def from_rcsb(cls, pdb_id: str, keep_source: bool = False) -> ProteinComplex:
+        f: io.StringIO = rcsb.fetch(pdb_id, "cif")  # type: ignore
+        return cls.from_mmcif(f, id=pdb_id, keep_source=keep_source, is_predicted=False)
+
+    @classmethod
+    def from_mmcif(
+        cls,
+        path: PathOrBuffer,
+        id: str | None = None,
+        assembly_id: str | None = None,
+        is_predicted: bool = False,
+        keep_source: bool = False,
+    ):
+        """Return a ProteinComplex object from an mmcif file.
+        TODO(@zeming): there's actually multiple complexes per file, but for ease of implementation,
+        we only consider the first defined complex!
+
+        Args:
+            path (str | Path | io.TextIO): Path or buffer to read mmcif file from. Should be uncompressed.
+            id (str, optional): String identifier to assign to structure. Will attempt to infer otherwise.
+            is_predicted (bool): If True, reads b factor as the confidence readout. Default: False.
+            chain_id (str, optional): Select a chain corresponding to (author) chain id.
+        """
+        mmcif = MmcifWrapper.read(path, id)
+        return get_assembly_fast(mmcif, assembly_id=assembly_id)
+
+    @classmethod
+    def from_chains(
+        cls,
+        chains: Sequence[ProteinChain],
+        mmcif: MmcifWrapper | None = None,
+        all_assembly_metadata_dictionary: dict[str, list[str]] | None = None,
+    ):
         if not chains:
             raise ValueError(
                 "Cannot create a ProteinComplex from an empty list of chains"
             )
 
-        # TODO: Make a proper protein complex class
+        # TODO(roshan): Make a proper protein complex class
         def join_arrays(arrays: Sequence[np.ndarray], sep: np.ndarray):
             full_array = []
             for array in arrays:
@@ -376,7 +503,6 @@ class ProteinComplex:
         ent2num_max = -1
         ent2num = {}
         total_index = 0
-        chain_boundaries = []
         for i, c in enumerate(chains):
             num_res = c.residue_index.shape[0]
             if c.chain_id not in chain2num:
@@ -401,7 +527,6 @@ class ProteinComplex:
                 }
             )
 
-            chain_boundaries.append((total_index, total_index + num_res))
             total_index += num_res + 1
 
         sep = np.array([-1])
@@ -412,20 +537,25 @@ class ProteinComplex:
         array_args.update(update)
 
         metadata = ProteinComplexMetadata(
-            chain_boundaries=chain_boundaries,
+            mmcif=mmcif,
             chain_lookup={v: k for k, v in chain2num.items()},
             entity_lookup={v: k for k, v in ent2num.items()},
+            assembly_composition=all_assembly_metadata_dictionary,
         )
 
         return cls(
             id=chains[0].id,
-            sequence=esm3_c.CHAIN_BREAK_STR.join(chain.sequence for chain in chains),
+            sequence=residue_constants.CHAIN_BREAK_TOKEN.join(
+                chain.sequence for chain in chains
+            ),
             metadata=metadata,
             **array_args,
         )
 
     def infer_oxygen(self) -> ProteinComplex:
         """Oxygen position is fixed given N, CA, C atoms. Infer it if not provided."""
+        O_missing_indices = np.argwhere(np.isnan(self.atoms["O"]).any(axis=1)).squeeze()
+
         O_vector = torch.tensor([0.6240, -1.0613, 0.0103], dtype=torch.float32)
         N, CA, C = torch.from_numpy(self.atoms[["N", "CA", "C"]]).float().unbind(dim=1)
         N = torch.roll(N, -3)
@@ -437,14 +567,55 @@ class ProteinComplex:
         atom37_positions = self.atom37_positions.copy()
         atom37_mask = self.atom37_mask.copy()
 
-        atom37_positions[:, residue_constants.atom_order["O"]] = O.numpy()
-        atom37_mask[:, residue_constants.atom_order["O"]] = ~np.isnan(
-            atom37_positions[:, residue_constants.atom_order["O"]]
+        atom37_positions[O_missing_indices, residue_constants.atom_order["O"]] = O[
+            O_missing_indices
+        ].numpy()
+        atom37_mask[O_missing_indices, residue_constants.atom_order["O"]] = ~np.isnan(
+            atom37_positions[O_missing_indices, residue_constants.atom_order["O"]]
         ).any(-1)
         new_chain = replace(
             self, atom37_positions=atom37_positions, atom37_mask=atom37_mask
         )
         return new_chain
+
+    def infer_cbeta(self, infer_cbeta_for_glycine: bool = False) -> ProteinComplex:
+        """Return a new chain with inferred CB atoms at all residues except GLY.
+
+        Args:
+            infer_cbeta_for_glycine (bool): If True, infers a beta carbon for glycine
+                residues, even though that residue doesn't have one.  Default off.
+
+                NOTE(rverkuil): The reason for having this switch in the first place
+                is that sometimes we want a (inferred) CB coordinate for every residue,
+                for example for making a pairwise distance matrix, or doing an RMSD
+                calculation between two designs for a given structural template, w/
+                CB atoms.
+        """
+        atom37_positions = self.atom37_positions.copy()
+        atom37_mask = self.atom37_mask.copy()
+
+        N, CA, C = np.moveaxis(self.atoms[["N", "CA", "C"]], 1, 0)
+        # See usage in trDesign codebase.
+        # https://github.com/gjoni/trDesign/blob/f2d5930b472e77bfacc2f437b3966e7a708a8d37/02-GD/utils.py#L140
+        inferred_cbeta_positions = infer_CB(C, N, CA, 1.522, 1.927, -2.143)
+        if not infer_cbeta_for_glycine:
+            inferred_cbeta_positions[np.array(list(self.sequence)) == "G", :] = np.nan
+
+        atom37_positions[:, residue_constants.atom_order["CB"]] = (
+            inferred_cbeta_positions
+        )
+        atom37_mask[:, residue_constants.atom_order["CB"]] = ~np.isnan(
+            atom37_positions[:, residue_constants.atom_order["CB"]]
+        ).any(-1)
+        new_chain = replace(
+            self, atom37_positions=atom37_positions, atom37_mask=atom37_mask
+        )
+        return new_chain
+
+    @classmethod
+    def from_open_source(cls, pc: ProteinComplex):
+        # TODO(@zeming): deprecated, should delete
+        return pc
 
     @classmethod
     def concat(cls, objs: list[ProteinComplex]) -> ProteinComplex:
@@ -462,6 +633,50 @@ class ProteinComplex:
         assert len(list(self.chain_iter())) == len(
             list(other.chain_iter())
         ), "Protein complexes must have the same number of chains"
+
+    def rmsd(
+        self,
+        target: ProteinComplex,
+        also_check_reflection: bool = False,
+        mobile_inds: list[int] | np.ndarray | None = None,
+        target_inds: list[int] | np.ndarray | None = None,
+        only_compute_backbone_rmsd: bool = False,
+        compute_chain_assignment: bool = True,
+    ):
+        """
+        Compute the RMSD between this protein chain and another.
+
+        Args:
+            target (ProteinComplex): The target (other) protein complex to compare to.
+            also_check_reflection (bool, optional): If True, also check if the reflection of the mobile atoms has a lower RMSD.
+            mobile_inds (list[int], optional): The indices of the mobile atoms to align. These are NOT residue indices
+            target_inds (list[int], optional): The indices of the target atoms to align. These are NOT residue indices
+            only_compute_backbone_rmsd (bool, optional): If True, only compute the RMSD of the backbone atoms.
+        """
+        if compute_chain_assignment:
+            aligned = self.dockq(target).aligned
+        else:
+            aligned = self
+
+        aligner = Aligner(
+            aligned if mobile_inds is None else aligned[mobile_inds],
+            target if target_inds is None else target[target_inds],
+            only_compute_backbone_rmsd,
+        )
+        avg_rmsd = aligner.rmsd
+
+        if not also_check_reflection:
+            return avg_rmsd
+
+        aligner = Aligner(
+            aligned if mobile_inds is None else aligned[mobile_inds],
+            target if target_inds is None else target[target_inds],
+            only_compute_backbone_rmsd,
+            use_reflection=True,
+        )
+        avg_rmsd_neg = aligner.rmsd
+
+        return min(avg_rmsd, avg_rmsd_neg)
 
     def lddt_ca(
         self,
@@ -537,6 +752,10 @@ class ProteinComplex:
         # This function uses dockqv2 to compute the DockQ score. Because it does a mapping
         # over all possible chains, it's quite slow. Be careful not to use this in an inference loop
         # or something that requires fast scoring. It defaults to 8 CPUs.
+        #
+        # TODO(@zeming): Because we haven't properly implemented protein complexes for mmcif,
+        # if your protein has multi-letter or repeated chain IDs, this will fail. Please call
+        # pc = pc.normalize_chain_ids_for_pdb() before calling this function in that case (limit is 62 chains)
 
         try:
             pass
@@ -658,3 +877,316 @@ class ProteinComplex:
         )
 
         return result
+
+    @cached_property
+    def per_chain_kd_trees(self):
+        # Iterate over chains, build KDTree for each chain
+        kdtrees = []
+
+        CA = self.atoms["CA"]
+
+        for start, end in self.chain_boundaries:
+            chain_CA = CA[start:end]
+            chain_CA = chain_CA[np.isfinite(chain_CA).all(axis=-1)]
+            kdtrees.append(KDTree(chain_CA))
+
+        return kdtrees
+
+    def chain_adjacency(self, cutoff: float = 8.0) -> np.ndarray:
+        # Compute adjacency matrix for protein complex
+        num_chains = self.num_chains
+        adjacency = np.zeros((num_chains, num_chains), dtype=bool)
+        for (i, kdtree), (j, kdtree2) in itertools.combinations(
+            enumerate(self.per_chain_kd_trees), 2
+        ):
+            adj = kdtree.query_ball_tree(kdtree2, cutoff)
+            any_is_adjacent = any(len(a) > 0 for a in adj)
+            adjacency[i, j] = any_is_adjacent
+            adjacency[j, i] = any_is_adjacent
+        return adjacency
+
+    def chain_adjacency_by_index(self, index: int, cutoff: float = 8.0) -> np.ndarray:
+        num_chains = len(self.chain_boundaries)
+        adjacency = np.zeros(num_chains, dtype=bool)
+        for i, kdtree in enumerate(self.per_chain_kd_trees):
+            if i == index:
+                continue
+            adj = kdtree.query_ball_tree(self.per_chain_kd_trees[index], cutoff)
+            adjacency[i] = any(len(a) > 0 for a in adj)
+        return adjacency
+
+    def add_prefix_to_chain_ids(self, prefix: str) -> ProteinComplex:
+        """Rename all chains in the complex with a given prefix.
+
+        Args:
+            prefix (str): The prefix to use for the new chain IDs. Each chain will be
+                named as "{prefix}_{chain_id}".
+
+        Returns:
+            ProteinComplex: A new protein complex with renamed chains.
+        """
+        new_chains = []
+        for chain in self.chain_iter():
+            # Create new chain with updated chain_id
+            new_chain = replace(chain, chain_id=f"{prefix}_{chain.chain_id}")
+            new_chains.append(new_chain)
+        return ProteinComplex.from_chains(new_chains)
+
+    def sasa(self, by_residue: bool = True):
+        chain = self.as_chain(force_conversion=True)
+        return chain.sasa(by_residue=by_residue)
+
+    def to_mmcif_string(self) -> str:
+        """Convert the ProteinComplex to mmCIF format.
+
+        Returns:
+            str: The mmCIF content as a string.
+        """
+        # Convert the ProteinComplex to a biotite AtomArray
+        # Collect all atoms from all chains
+        all_atoms = []
+        for chain in self.chain_iter():
+            chain_atom_array = chain.atom_array
+            # Convert AtomArray to list of atoms and add to collection
+            all_atoms.extend(chain_atom_array)
+
+        # Create combined AtomArray from all atoms
+        if not all_atoms:
+            raise ValueError("No atoms found in protein complex")
+
+        atom_array = bs.array(all_atoms)
+
+        # Create CIF file
+        f = CIFFile()
+        set_structure_pdbx(f, atom_array, data_block=self.id)
+
+        # Add entity information for proper mmCIF structure
+        self._add_entity_information(f)
+
+        # Write to string
+        output = io.StringIO()
+        f.write(output)
+        return output.getvalue()
+
+    def _add_entity_information(self, cif_file: CIFFile) -> None:
+        """Add entity, entity_poly, and struct_asym sections to CIF file."""
+
+        # Group chains by sequence to create unique entities
+        entity_map = {}  # sequence -> entity_id
+        chain_to_entity = {}  # chain_id -> entity_id
+        entity_sequences = {}  # entity_id -> sequence
+        entity_id_counter = 1
+
+        for chain in self.chain_iter():
+            sequence = chain.sequence
+            if sequence not in entity_map:
+                entity_map[sequence] = entity_id_counter
+                entity_sequences[entity_id_counter] = sequence
+                entity_id_counter += 1
+            chain_to_entity[chain.chain_id] = entity_map[sequence]
+
+        # Create _entity section
+        entity_ids = []
+        entity_types = []
+        entity_descriptions = []
+
+        for entity_id in sorted(entity_sequences.keys()):
+            entity_ids.append(str(entity_id))
+            entity_types.append("polymer")
+            entity_descriptions.append(f"Protein chain (entity {entity_id})")
+
+        cif_file.block["entity"] = CIFCategory(
+            name="entity",
+            columns={
+                "id": CIFColumn(
+                    data=CIFData(array=np.array(entity_ids), dtype=np.str_)
+                ),
+                "type": CIFColumn(
+                    data=CIFData(array=np.array(entity_types), dtype=np.str_)
+                ),
+                "pdbx_description": CIFColumn(
+                    data=CIFData(array=np.array(entity_descriptions), dtype=np.str_)
+                ),
+            },
+        )
+
+        # Create _entity_poly section
+        poly_entity_ids = []
+        poly_types = []
+        poly_nstd_linkages = []
+        poly_sequences = []
+
+        for entity_id in sorted(entity_sequences.keys()):
+            poly_entity_ids.append(str(entity_id))
+            poly_types.append("polypeptide(L)")
+            poly_nstd_linkages.append("no")
+            poly_sequences.append(entity_sequences[entity_id])
+
+        cif_file.block["entity_poly"] = CIFCategory(
+            name="entity_poly",
+            columns={
+                "entity_id": CIFColumn(
+                    data=CIFData(array=np.array(poly_entity_ids), dtype=np.str_)
+                ),
+                "type": CIFColumn(
+                    data=CIFData(array=np.array(poly_types), dtype=np.str_)
+                ),
+                "nstd_linkage": CIFColumn(
+                    data=CIFData(array=np.array(poly_nstd_linkages), dtype=np.str_)
+                ),
+                "pdbx_seq_one_letter_code": CIFColumn(
+                    data=CIFData(array=np.array(poly_sequences), dtype=np.str_)
+                ),
+            },
+        )
+
+        # Create _struct_asym section
+        asym_ids = []
+        asym_entity_ids = []
+        asym_details = []
+
+        for chain in self.chain_iter():
+            asym_ids.append(chain.chain_id)
+            asym_entity_ids.append(str(chain_to_entity[chain.chain_id]))
+            asym_details.append("")
+
+        cif_file.block["struct_asym"] = CIFCategory(
+            name="struct_asym",
+            columns={
+                "id": CIFColumn(data=CIFData(array=np.array(asym_ids), dtype=np.str_)),
+                "entity_id": CIFColumn(
+                    data=CIFData(array=np.array(asym_entity_ids), dtype=np.str_)
+                ),
+                "details": CIFColumn(
+                    data=CIFData(array=np.array(asym_details), dtype=np.str_)
+                ),
+            },
+        )
+
+
+def get_assembly_fast(
+    mmcif: MmcifWrapper,
+    assembly_id=None,
+    model=None,
+    data_block=None,
+    altloc="first",
+    use_author_fields=True,
+):
+    pdbx_file = mmcif.raw
+    if pdbx_file is None:
+        raise InvalidFileError("No mmCIF data loaded")
+    assembly_gen_category = pdbx_file.block["pdbx_struct_assembly_gen"]
+    if assembly_gen_category is None:
+        raise InvalidFileError("File has no 'pdbx_struct_assembly_gen' category")
+
+    struct_oper_category = pdbx_file.block["pdbx_struct_oper_list"]
+    if struct_oper_category is None:
+        raise InvalidFileError("File has no 'pdbx_struct_oper_list' category")
+
+    if assembly_id is None:
+        assembly_id = assembly_gen_category["assembly_id"].data.array[0]
+    elif assembly_id not in assembly_gen_category["assembly_id"].data.array:
+        raise KeyError(f"File has no Assembly ID '{assembly_id}'")
+
+    ### Calculate all possible transformations
+    transformations = _get_transformations(struct_oper_category)
+
+    ### Get structure according to additional parameters
+    structure = get_structure(
+        pdbx_file, model, data_block, altloc, ["label_asym_id"], use_author_fields
+    )[0]  # type: ignore
+    # TODO(@zeming) This line will remove all non-protein structural elements,
+    # we should remove this when we want to parse these too.
+    structure: bs.AtomArray = structure[
+        bs.filter_amino_acids(structure) & ~structure.hetero  # type: ignore
+    ]
+    if len(structure) == 0:
+        raise NoProteinError
+    unique_asym_ids = np.unique(structure.label_asym_id)  # type: ignore
+    asym2chain = {}
+    asym2auth = {}
+    for asym_id in unique_asym_ids:
+        sub_structure: bs.AtomArray = structure[structure.label_asym_id == asym_id]  # type: ignore
+        chain_id: str = sub_structure[0].chain_id  # type: ignore
+        (
+            sequence,
+            atom_positions,
+            atom_mask,
+            residue_index,
+            insertion_code,
+            confidence,
+            entity_id,
+        ) = chain_to_ndarray(sub_structure, mmcif, chain_id, False)
+
+        asym2chain[asym_id] = ProteinChain(
+            id=mmcif.id or "unknown",
+            sequence=sequence,
+            chain_id=chain_id,
+            entity_id=entity_id,
+            atom37_positions=atom_positions,
+            atom37_mask=atom_mask,
+            residue_index=residue_index,
+            insertion_code=insertion_code,
+            confidence=confidence,
+            mmcif=None,
+        )
+        asym2auth[asym_id] = chain_id
+
+    ### Get transformations and apply them to the affected asym IDs
+    assembly = []
+    assembly_id_dict: dict[str, list[str]] = {}
+
+    # Process the target assembly ID
+    for aid, op_expr, asym_id_expr in zip(
+        assembly_gen_category["assembly_id"].data.array,
+        assembly_gen_category["oper_expression"].data.array,
+        assembly_gen_category["asym_id_list"].data.array,
+    ):
+        if aid == assembly_id:
+            # Parse operations and asym IDs for this specific entry
+            operations = _parse_operation_expression(op_expr)
+            asym_ids = asym_id_expr.split(",")
+
+            # Filter affected asym IDs to only protein chains, preserving order
+            sub_structures = [
+                asym2chain[asym_id] for asym_id in asym_ids if asym_id in asym2chain
+            ]
+
+            # Apply transformations
+            sub_assembly = _apply_transformations_fast(
+                sub_structures, transformations, operations
+            )
+            assembly.extend(sub_assembly)
+
+            # Build assembly_id_dict for this entry
+            assembly_id_dict[aid] = assembly_id_dict.get(aid, []) + [
+                asym2auth[id_] for id_ in asym_ids if id_ in asym2auth
+            ]
+
+    if len(assembly) == 0:
+        raise NoProteinError
+    return ProteinComplex.from_chains(assembly, mmcif, assembly_id_dict)
+
+
+def protein_chain_to_protein_complex(chain: ProteinChain) -> ProteinComplex:
+    if "|" not in chain.sequence:
+        return ProteinComplex.from_chains([chain])
+    chain_breaks = np.array(list(chain.sequence)) == "|"
+    chain_break_inds = np.where(chain_breaks)[0]
+    chain_break_inds = np.concatenate([[0], chain_break_inds, [len(chain)]])
+    chain_break_inds = np.array(list(zip(chain_break_inds[:-1], chain_break_inds[1:])))
+    complex_chains = []
+    for start, end in chain_break_inds:
+        if start != 0:
+            start += 1
+        complex_chains.append(chain[start:end])
+    complex_chains = [
+        ProteinChain.from_atom37(
+            chain.atom37_positions,
+            sequence=chain.sequence,
+            chain_id=SINGLE_LETTER_CHAIN_IDS[i],
+            entity_id=i,
+        )
+        for i, chain in enumerate(complex_chains)
+    ]
+    return ProteinComplex.from_chains(complex_chains)
