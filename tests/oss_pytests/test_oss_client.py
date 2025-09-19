@@ -38,6 +38,7 @@ def test_oss_esm3_client():
     logits_config = LogitsConfig(sequence=True, return_embeddings=True)
     result = esm3_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert result.logits is not None
     assert isinstance(result.logits.sequence, torch.Tensor)
 
     sampling_config = SamplingConfig(sequence=SamplingTrackConfig(temperature=0.1))
@@ -71,6 +72,7 @@ def test_oss_esmc_client():
     )
     result = esmc_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert result.logits is not None
     assert isinstance(result.logits.sequence, torch.Tensor)
 
 
