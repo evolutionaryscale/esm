@@ -4,7 +4,6 @@ from typing import Any, Sequence
 import numpy as np
 
 
-
 @dataclass
 class Modification:
     position: int  # zero-indexed

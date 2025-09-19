@@ -1,13 +1,9 @@
-import asyncio
-import time
-from abc import ABC, abstractmethod
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
 from esm.sdk.api import ESMProteinError
-from esm.sdk.retry import retry_decorator
 from esm.utils.decoding import assemble_message
 
 
@@ -116,10 +112,7 @@ class _BaseForgeInferenceClient:
     ):
         try:
             request, headers = self.prepare_request(
-                request,
-                potential_sequence_of_concern,
-                return_bytes,
-                headers,
+                request, potential_sequence_of_concern, return_bytes, headers
             )
             response = await self.async_client.post(
                 url=urljoin(self.url, f"/api/v1/{endpoint}"),
@@ -149,10 +142,7 @@ class _BaseForgeInferenceClient:
     ):
         try:
             request, headers = self.prepare_request(
-                request,
-                potential_sequence_of_concern,
-                return_bytes,
-                headers,
+                request, potential_sequence_of_concern, return_bytes, headers
             )
             response = self.client.post(
                 url=urljoin(self.url, f"/api/v1/{endpoint}"),
@@ -170,5 +160,3 @@ class _BaseForgeInferenceClient:
                 error_code=500,
                 error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
             )
-
-

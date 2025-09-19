@@ -4,7 +4,7 @@ import asyncio
 import base64
 import pickle
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Literal, Sequence, cast
+from typing import Any, Sequence
 
 import torch
 
@@ -20,21 +20,14 @@ from esm.sdk.api import (
     InverseFoldingConfig,
     LogitsConfig,
     LogitsOutput,
-    ProteinChain,
     ProteinType,
     SamplingConfig,
     SamplingTrackConfig,
 )
-from esm.sdk.base_forge_client import (
-    _BaseForgeInferenceClient,
-)
+from esm.sdk.base_forge_client import _BaseForgeInferenceClient
 from esm.sdk.retry import retry_decorator
 from esm.utils.constants.api import MIMETYPE_ES_PICKLE
-from esm.utils.misc import (
-    deserialize_tensors,
-    maybe_list,
-    maybe_tensor,
-)
+from esm.utils.misc import deserialize_tensors, maybe_list, maybe_tensor
 from esm.utils.msa import MSA
 from esm.utils.structure.input_builder import (
     StructurePredictionInput,
@@ -108,12 +101,8 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         )
 
     @staticmethod
-    def _process_fold_request(
-        sequence: str,
-        model_name: str | None,
-    ):
+    def _process_fold_request(sequence: str, model_name: str | None):
         request: dict[str, Any] = {"sequence": sequence}
-
 
         request["model"] = model_name
 
@@ -148,7 +137,6 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             request["model"] = model_name
 
         return request
-
 
     async def _async_fetch_msa(self, sequence: str) -> MSA:
         print("Fetching MSA ... this may take a few minutes")
@@ -188,15 +176,11 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         del potential_sequence_of_concern
 
         request = self._process_fold_request(
-            sequence,
-            model_name if model_name is not None else self.model,
+            sequence, model_name if model_name is not None else self.model
         )
 
         try:
-            data = await self._async_post(
-                "fold",
-                request,
-            )
+            data = await self._async_post("fold", request)
         except ESMProteinError as e:
             return e
 
@@ -223,15 +207,11 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         del potential_sequence_of_concern
 
         request = self._process_fold_request(
-            sequence,
-            model_name if model_name is not None else self.model,
+            sequence, model_name if model_name is not None else self.model
         )
 
         try:
-            data = self._post(
-                "fold",
-                request,
-            )
+            data = self._post("fold", request)
         except ESMProteinError as e:
             return e
 
@@ -239,9 +219,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
 
     @retry_decorator
     async def async_fold_all_atom(
-        self,
-        all_atom_input: StructurePredictionInput,
-        model_name: str | None = None,
+        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
     ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
         """Fold a molecular complex containing proteins, nucleic acids, and/or ligands.
 
@@ -250,15 +228,11 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             model_name: Override the client level model name if needed
         """
         request = self._process_fold_all_atom_request(
-            all_atom_input,
-            model_name if model_name is not None else self.model,
+            all_atom_input, model_name if model_name is not None else self.model
         )
 
         try:
-            data = await self._async_post(
-                "fold_all_atom",
-                request,
-            )
+            data = await self._async_post("fold_all_atom", request)
         except ESMProteinError as e:
             return e
 
@@ -266,9 +240,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
 
     @retry_decorator
     def fold_all_atom(
-        self,
-        all_atom_input: StructurePredictionInput,
-        model_name: str | None = None,
+        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
     ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
         """Predict coordinates for a molecular complex containing proteins, dna, rna, and/or ligands.
 
@@ -277,15 +249,11 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             model_name: Override the client level model name if needed
         """
         request = self._process_fold_all_atom_request(
-            all_atom_input,
-            model_name if model_name is not None else self.model,
+            all_atom_input, model_name if model_name is not None else self.model
         )
 
         try:
-            data = self._post(
-                "fold_all_atom",
-                request,
-            )
+            data = self._post("fold_all_atom", request)
         except ESMProteinError as e:
             return e
 
@@ -293,14 +261,12 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
 
     @staticmethod
     def _process_fold_all_atom_request(
-        all_atom_input: StructurePredictionInput,
-        model_name: str | None = None,
+        all_atom_input: StructurePredictionInput, model_name: str | None = None
     ) -> dict[str, Any]:
         request: dict[str, Any] = {
             "all_atom_input": serialize_structure_prediction_input(all_atom_input),
             "model": model_name,
         }
-
 
         return request
 
@@ -384,7 +350,6 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             return e
 
         return ESMProtein(sequence=data["sequence"])
-
 
 
 class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
@@ -1212,5 +1177,3 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
         raise NotImplementedError(
             f"Can not get underlying remote model {self.model} from a Forge client."
         )
-
-
