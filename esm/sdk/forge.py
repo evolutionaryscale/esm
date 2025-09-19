@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import pickle
@@ -7,7 +9,6 @@ from typing import Any, Sequence
 import torch
 
 from esm.sdk.api import (
-    MSA,
     ESM3InferenceClient,
     ESMCInferenceClient,
     ESMProtein,
@@ -27,6 +28,15 @@ from esm.sdk.base_forge_client import _BaseForgeInferenceClient
 from esm.sdk.retry import retry_decorator
 from esm.utils.constants.api import MIMETYPE_ES_PICKLE
 from esm.utils.misc import deserialize_tensors, maybe_list, maybe_tensor
+from esm.utils.msa import MSA
+from esm.utils.structure.input_builder import (
+    StructurePredictionInput,
+    serialize_structure_prediction_input,
+)
+from esm.utils.structure.molecular_complex import (
+    MolecularComplex,
+    MolecularComplexResult,
+)
 from esm.utils.types import FunctionAnnotation
 
 
@@ -36,10 +46,8 @@ def _list_to_function_annotations(l) -> list[FunctionAnnotation] | None:
     return [FunctionAnnotation(*t) for t in l]
 
 
-def _maybe_logits(data: dict[str, Any], track: str, return_bytes: bool = False):
-    ret = data.get("logits", {}).get(track, None)
-    # TODO(s22chan): just return this when removing return_bytes
-    return ret if ret is None or not return_bytes else maybe_tensor(ret)
+def _maybe_logits(data: dict[str, Any], track: str):
+    return maybe_tensor(data.get("logits", {}).get(track, None))
 
 
 def _maybe_b64_decode(obj, return_bytes: bool):
@@ -137,7 +145,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         data = await self._async_post(
             "msa", request={}, params={"sequence": sequence, "use_env": False}
         )
-        return MSA(sequences=data["msa"])
+        return MSA.from_sequences(sequences=data["msa"])
 
     def _fetch_msa(self, sequence: str) -> MSA:
         print("Fetching MSA ... this may take a few minutes")
@@ -146,7 +154,7 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         data = self._post(
             "msa", request={}, params={"sequence": sequence, "use_env": False}
         )
-        return MSA(sequences=data["msa"])
+        return MSA.from_sequences(sequences=data["msa"])
 
     @retry_decorator
     async def async_fold(
@@ -208,6 +216,70 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             return e
 
         return self._process_fold_response(data, sequence)
+
+    @retry_decorator
+    async def async_fold_all_atom(
+        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
+    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
+        """Fold a molecular complex containing proteins, nucleic acids, and/or ligands.
+
+        Args:
+            all_atom_input: StructurePredictionInput containing sequences for different molecule types
+            model_name: Override the client level model name if needed
+        """
+        request = self._process_fold_all_atom_request(
+            all_atom_input, model_name if model_name is not None else self.model
+        )
+
+        try:
+            data = await self._async_post("fold_all_atom", request)
+        except ESMProteinError as e:
+            return e
+
+        return self._process_fold_all_atom_response(data)
+
+    @retry_decorator
+    def fold_all_atom(
+        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
+    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
+        """Predict coordinates for a molecular complex containing proteins, dna, rna, and/or ligands.
+
+        Args:
+            all_atom_input: StructurePredictionInput containing sequences for different molecule types
+            model_name: Override the client level model name if needed
+        """
+        request = self._process_fold_all_atom_request(
+            all_atom_input, model_name if model_name is not None else self.model
+        )
+
+        try:
+            data = self._post("fold_all_atom", request)
+        except ESMProteinError as e:
+            return e
+
+        return self._process_fold_all_atom_response(data)
+
+    @staticmethod
+    def _process_fold_all_atom_request(
+        all_atom_input: StructurePredictionInput, model_name: str | None = None
+    ) -> dict[str, Any]:
+        request: dict[str, Any] = {
+            "all_atom_input": serialize_structure_prediction_input(all_atom_input),
+            "model": model_name,
+        }
+
+        return request
+
+    @staticmethod
+    def _process_fold_all_atom_response(data: dict[str, Any]) -> MolecularComplexResult:
+        complex_data = data.get("complex")
+        molecular_complex = MolecularComplex.from_state_dict(complex_data)
+        return MolecularComplexResult(
+            complex=molecular_complex,
+            plddt=maybe_tensor(data.get("plddt"), convert_none_to_nan=True),
+            ptm=data.get("ptm", None),
+            distogram=maybe_tensor(data.get("distogram"), convert_none_to_nan=True),
+        )
 
     @retry_decorator
     async def async_inverse_fold(
@@ -602,19 +674,15 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
 
         return LogitsOutput(
             logits=ForwardTrackData(
-                sequence=_maybe_logits(data, "sequence", return_bytes),
-                structure=_maybe_logits(data, "structure", return_bytes),
-                secondary_structure=_maybe_logits(
-                    data, "secondary_structure", return_bytes
-                ),
-                sasa=_maybe_logits(data, "sasa", return_bytes),
-                function=_maybe_logits(data, "function", return_bytes),
+                sequence=_maybe_logits(data, "sequence"),
+                structure=_maybe_logits(data, "structure"),
+                secondary_structure=_maybe_logits(data, "secondary_structure"),
+                sasa=_maybe_logits(data, "sasa"),
+                function=_maybe_logits(data, "function"),
             ),
             embeddings=maybe_tensor(data["embeddings"]),
             mean_embedding=data["mean_embedding"],
-            residue_annotation_logits=_maybe_logits(
-                data, "residue_annotation", return_bytes
-            ),
+            residue_annotation_logits=_maybe_logits(data, "residue_annotation"),
             hidden_states=maybe_tensor(data["hidden_states"]),
             mean_hidden_state=maybe_tensor(data["mean_hidden_state"]),
         )
@@ -965,6 +1033,7 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
             "sequence": config.sequence,
             "return_embeddings": config.return_embeddings,
             "return_mean_embedding": config.return_mean_embedding,
+            "return_mean_hidden_states": config.return_mean_hidden_states,
             "return_hidden_states": config.return_hidden_states,
             "ith_hidden_layer": config.ith_hidden_layer,
         }
@@ -981,12 +1050,11 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
         data["hidden_states"] = _maybe_b64_decode(data["hidden_states"], return_bytes)
 
         output = LogitsOutput(
-            logits=ForwardTrackData(
-                sequence=_maybe_logits(data, "sequence", return_bytes)
-            ),
+            logits=ForwardTrackData(sequence=_maybe_logits(data, "sequence")),
             embeddings=maybe_tensor(data["embeddings"]),
             mean_embedding=data["mean_embedding"],
             hidden_states=maybe_tensor(data["hidden_states"]),
+            mean_hidden_state=maybe_tensor(data["mean_hidden_state"]),
         )
         return output
 

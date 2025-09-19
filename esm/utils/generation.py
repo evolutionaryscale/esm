@@ -43,7 +43,9 @@ def _trim_sequence_tensor_dataclass(o: Any, sequence_len: int):
 
     sliced = {}
     for k, v in attr.asdict(o, recurse=False).items():
-        if v is None:
+        if k in ["mean_hidden_state", "mean_embedding"]:
+            sliced[k] = v
+        elif v is None:
             sliced[k] = None
         elif isinstance(v, torch.Tensor):
             # Trim padding.
