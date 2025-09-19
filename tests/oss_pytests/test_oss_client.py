@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import torch
 
 from esm.sdk import client  # pyright: ignore
 from esm.sdk.api import (  # pyright: ignore
@@ -37,6 +38,7 @@ def test_oss_esm3_client():
     logits_config = LogitsConfig(sequence=True, return_embeddings=True)
     result = esm3_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert isinstance(result.logits.sequence, torch.Tensor)
 
     sampling_config = SamplingConfig(sequence=SamplingTrackConfig(temperature=0.1))
     result = esm3_client.forward_and_sample(
@@ -69,6 +71,7 @@ def test_oss_esmc_client():
     )
     result = esmc_client.logits(input=encoded_protein, config=logits_config)
     assert isinstance(result, LogitsOutput)
+    assert isinstance(result.logits.sequence, torch.Tensor)
 
 
 @pytest.mark.sdk

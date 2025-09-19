@@ -1726,8 +1726,8 @@ packages:
   requires_python: '>=3.8'
 - pypi: ./
   name: esm
-  version: 3.2.2
-  sha256: c14e2546bda5f0910c14acfabb7ea334e7171905c6799b43178f0420a92d6f3e
+  version: 3.2.2.post2
+  sha256: 3f59a2977c85d35b4b1353902fa90e35d02acbabe6ffb506727bd406ec987ad1
   requires_dist:
   - torch>=2.2.0
   - torchvision

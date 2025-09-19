@@ -148,12 +148,35 @@ class ESMProtein(ProteinType):
             gt_chains = list(copy_annotations_from_ground_truth.chain_iter())
         else:
             gt_chains = None
+
+        # Expand pLDDT to match sequence length if needed, inserting NaN at chain breaks
+        # This handles the case where the server doesn't include chain breaks in pLDDT
+        # We should fix this in the server side.
+        if self.plddt is not None and len(self.plddt) != len(self.sequence):
+            # Only expand if there's a mismatch (likely due to chain breaks)
+            if "|" in self.sequence:
+                # Create expanded pLDDT with NaN at chain break positions
+                expanded_plddt = torch.full((len(self.sequence),), float("nan"))
+                plddt_idx = 0
+                for i, aa in enumerate(self.sequence):
+                    if aa != "|":
+                        if plddt_idx < len(self.plddt):
+                            expanded_plddt[i] = self.plddt[plddt_idx]
+                        plddt_idx += 1
+                plddt = expanded_plddt
+            else:
+                # Mismatch but no chain breaks - shouldn't happen but preserve original
+                plddt = self.plddt
+        else:
+            plddt = self.plddt
+
         pred_chains = []
         for i, (start, end) in enumerate(chain_boundaries):
             if i >= len(SINGLE_LETTER_CHAIN_IDS):
                 raise ValueError(
                     f"Too many chains to convert to ProteinComplex. The maximum number of chains is {len(SINGLE_LETTER_CHAIN_IDS)}"
                 )
+
             pred_chain = ProteinChain.from_atom37(
                 atom37_positions=coords[start:end],
                 sequence=self.sequence[start:end],
@@ -161,7 +184,7 @@ class ESMProtein(ProteinType):
                 if gt_chains is not None
                 else SINGLE_LETTER_CHAIN_IDS[i],
                 entity_id=gt_chains[i].entity_id if gt_chains is not None else None,
-                confidence=self.plddt[start:end] if self.plddt is not None else None,
+                confidence=plddt[start:end] if plddt is not None else None,
             )
             pred_chains.append(pred_chain)
         return ProteinComplex.from_chains(pred_chains)
@@ -296,13 +319,6 @@ class GenerationConfig:
         self.schedule = "cosine"
         self.strategy = "random"
         self.temperature_annealing = True
-
-
-@define
-class MSA:
-    # Paired MSA sequences.
-    # One would typically compute these using, for example, ColabFold.
-    sequences: list[str]
 
 
 @define

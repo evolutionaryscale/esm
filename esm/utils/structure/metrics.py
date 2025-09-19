@@ -264,7 +264,7 @@ def compute_lddt_ca(
     if all_atom_pred_pos.dim() != 3:
         all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
     all_atom_positions = all_atom_positions[..., ca_pos, :]
-    all_atom_mask = all_atom_mask[..., ca_pos : (ca_pos + 1)]  # keep dim
+    all_atom_mask = all_atom_mask[..., ca_pos]
 
     return compute_lddt(
         all_atom_pred_pos,
