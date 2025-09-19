@@ -2,19 +2,27 @@ from __future__ import annotations
 
 from abc import ABC
 from copy import deepcopy
-from typing import Sequence
+from typing import List, Sequence
 
 import attr
 import torch
 from attr import asdict, define
 
 import esm.utils.constants.api as C
-from esm.tokenization import TokenizerCollectionProtocol, get_esm3_model_tokenizers
+from esm.tokenization import (
+    TokenizerCollectionProtocol,
+    get_esm3_model_tokenizers,
+)
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
-from esm.utils.misc import get_chainbreak_boundaries_from_sequence
+from esm.utils.misc import (
+    get_chainbreak_boundaries_from_sequence,
+)
 from esm.utils.structure.protein_chain import ProteinChain
-from esm.utils.structure.protein_complex import SINGLE_LETTER_CHAIN_IDS, ProteinComplex
+from esm.utils.structure.protein_complex import (
+    SINGLE_LETTER_CHAIN_IDS,
+    ProteinComplex,
+)
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
 
 
@@ -34,6 +42,7 @@ class ESMProtein(ProteinType):
     # Metrics
     plddt: torch.Tensor | None = None
     ptm: torch.Tensor | None = None
+
 
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
@@ -327,6 +336,8 @@ class InverseFoldingConfig:
     temperature: float = 1.0
 
 
+
+
 ## Low Level Endpoint Types
 @define
 class SamplingTrackConfig:
@@ -389,6 +400,9 @@ class LogitsConfig:
     return_mean_embedding: bool = False
     return_mean_hidden_states: bool = False
     ith_hidden_layer: int = -1
+
+
+
 
 
 @define

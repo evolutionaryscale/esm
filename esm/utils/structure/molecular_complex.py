@@ -16,8 +16,14 @@ import numpy as np
 import torch
 
 from esm.utils import residue_constants
-from esm.utils.structure.metrics import compute_lddt, compute_rmsd
-from esm.utils.structure.protein_complex import ProteinComplex, ProteinComplexMetadata
+from esm.utils.structure.metrics import (
+    compute_lddt,
+    compute_rmsd,
+)
+from esm.utils.structure.protein_complex import (
+    ProteinComplex,
+    ProteinComplexMetadata,
+)
 
 
 @dataclass
