@@ -13,13 +13,9 @@ from esm.sdk.api import (
     GenerationConfig,
 )
 from esm.utils.constants import models
-from esm.widgets.components.results_visualizer import (
-    create_results_visualizer,
-)
+from esm.widgets.components.results_visualizer import create_results_visualizer
 from esm.widgets.utils.printing import wrapped_print
-from esm.widgets.utils.serialization import (
-    create_download_button,
-)
+from esm.widgets.utils.serialization import create_download_results_button
 
 
 def create_esm3_generation_launcher(
@@ -125,9 +121,7 @@ def create_esm3_generation_launcher(
         ]
     )
 
-    generation_config_ui = widgets.VBox(
-        [generation_config_settings_ui],
-    )
+    generation_config_ui = widgets.VBox([generation_config_settings_ui])
 
     def on_track_change(change):
         if change["new"] == "function":
@@ -157,7 +151,10 @@ def create_esm3_generation_launcher(
                         model=model_name.value, token=forge_token
                     )
                 elif isinstance(client, ESM3):
-                    if model_name.value != models.ESM3_OPEN_SMALL:
+                    if (
+                        models.normalize_model_name(model_name.value)
+                        != models.ESM3_OPEN_SMALL
+                    ):
                         raise ValueError(
                             f"Model name {model_name.value} does not match the client model {models.ESM3_OPEN_SMALL}"
                         )
@@ -217,7 +214,7 @@ def create_esm3_generation_launcher(
         now = datetime.datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S")
         filename = f"generated_proteins_{track.value}_{timestamp}.json"
-        download_button = create_download_button(proteins, filename)
+        download_button = create_download_results_button(proteins, filename)
         generation_config_ui.children = [
             *generation_config_ui.children,
             download_button,

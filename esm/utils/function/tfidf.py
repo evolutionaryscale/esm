@@ -50,8 +50,7 @@ class TFIDFModel:
         values /= np.linalg.norm(values)
 
         return sparse.csr_matrix(
-            (values, (np.zeros_like(indices), indices)),
-            shape=(1, len(self.vocabulary)),
+            (values, (np.zeros_like(indices), indices)), shape=(1, len(self.vocabulary))
         )
 
     def decode(self, vec: sparse.csr_matrix) -> list[str]:

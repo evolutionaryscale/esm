@@ -10,12 +10,8 @@ from matplotlib.patches import Rectangle
 
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.widgets.utils import indexing
-from esm.widgets.utils.drawing.draw_protein_structure import (
-    draw_protein_structure,
-)
-from esm.widgets.utils.parsing import (
-    convert_range_string_to_list_of_ranges,
-)
+from esm.widgets.utils.drawing.draw_protein_structure import draw_protein_structure
+from esm.widgets.utils.parsing import convert_range_string_to_list_of_ranges
 from esm.widgets.utils.printing import wrapped_print
 from esm.widgets.utils.prompting import PromptManager
 
@@ -112,10 +108,9 @@ def create_structure_prompt_selector(
             ).items():
                 selected_ranges = tuple(selected_ranges)  # Convert to hashable
                 if selected_ranges in contact_map_selection_cache:
-                    (
-                        (x_start, x_end),
-                        (y_start, y_end),
-                    ) = contact_map_selection_cache[selected_ranges]
+                    ((x_start, x_end), (y_start, y_end)) = contact_map_selection_cache[
+                        selected_ranges
+                    ]
                     rect = Rectangle(
                         (x_start - 0.5, max_y - y_end - 1.5),
                         x_end - x_start + 1,

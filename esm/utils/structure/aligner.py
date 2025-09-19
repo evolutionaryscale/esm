@@ -1,24 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import TYPE_CHECKING
+from dataclasses import Field, replace
+from typing import Any, ClassVar, Protocol, TypeVar
 
 import numpy as np
 import torch
 
-from esm.utils.structure.protein_structure import (
-    compute_affine_and_rmsd,
-)
+from esm.utils.structure.protein_structure import compute_affine_and_rmsd
 
-if TYPE_CHECKING:
-    from esm.utils.structure.protein_chain import ProteinChain
+
+class Alignable(Protocol):
+    # Trick to detect whether an object is a dataclass
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
+
+    @property
+    def atom37_positions(self) -> np.ndarray:  # type: ignore
+        pass
+
+    @property
+    def atom37_mask(self) -> np.ndarray:  # type: ignore
+        pass
+
+    def __len__(self) -> int: ...
+
+
+T = TypeVar("T", bound=Alignable)
 
 
 class Aligner:
     def __init__(
         self,
-        mobile: ProteinChain,
-        target: ProteinChain,
+        mobile: Alignable,
+        target: Alignable,
         only_use_backbone: bool = False,
         use_reflection: bool = False,
     ):
@@ -69,7 +82,7 @@ class Aligner:
     def rmsd(self):
         return self._rmsd
 
-    def apply(self, mobile: ProteinChain) -> ProteinChain:
+    def apply(self, mobile: T) -> T:
         """Apply alignment to a protein chain"""
         # Extract atom positions and convert to batched tensors
         mobile_atom_tensor = (

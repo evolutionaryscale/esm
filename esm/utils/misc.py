@@ -1,11 +1,16 @@
-import math
+import os
 from collections import defaultdict
 from contextlib import nullcontext
-from typing import ContextManager, Sequence, TypeVar
+from io import BytesIO
+from typing import Any, ContextManager, Sequence, TypeVar
+from warnings import warn
 
+import huggingface_hub
 import numpy as np
 import torch
+import zstd
 
+from esm.utils.constants.esm3 import CHAIN_BREAK_STR
 from esm.utils.types import FunctionAnnotation
 
 MAX_SUPPORTED_DISTANCE = 1e6
@@ -29,15 +34,15 @@ def slice_python_object_as_numpy(
         >>> slice_python_object_as_numpy(obj, np.arange(5) < 3)
         [1, 2, 3]
     """
-    if isinstance(idx, int):
-        idx = [idx]
+    if np.isscalar(idx):
+        idx = [int(idx)]  # type: ignore
 
     if isinstance(idx, np.ndarray) and idx.dtype == bool:
         sliced_obj = [obj[i] for i in np.where(idx)[0]]
     elif isinstance(idx, slice):
         sliced_obj = obj[idx]
     else:
-        sliced_obj = [obj[i] for i in idx]
+        sliced_obj = [obj[i] for i in idx]  # type: ignore
 
     match obj, sliced_obj:
         case str(), list():
@@ -152,6 +157,37 @@ def stack_variable_length_tensors(
     return array
 
 
+def binpack(
+    tensor: torch.Tensor, sequence_id: torch.Tensor | None, pad_value: int | float
+):
+    """
+    Args:
+        tensor (Tensor): [B, L, ...]
+
+    Returns:
+        Tensor: [B_binpacked, L_binpacked, ...]
+    """
+    if sequence_id is None:
+        return tensor
+
+    num_sequences = sequence_id.max(dim=-1).values + 1
+
+    dims = sequence_id.shape + tensor.shape[2:]
+    output_tensor = torch.full(
+        dims, fill_value=pad_value, dtype=tensor.dtype, device=tensor.device
+    )
+
+    idx = 0
+    for batch_idx, (batch_seqid, batch_num_sequences) in enumerate(
+        zip(sequence_id, num_sequences)
+    ):
+        for seqid in range(batch_num_sequences):
+            mask = batch_seqid == seqid
+            output_tensor[batch_idx, mask] = tensor[idx, : mask.sum()]
+            idx += 1
+    return output_tensor
+
+
 def unbinpack(
     tensor: torch.Tensor, sequence_id: torch.Tensor | None, pad_value: int | float
 ):
@@ -226,8 +262,7 @@ def merge_ranges(ranges: list[range], merge_gap_max: int | None = None) -> list[
 
 
 def merge_annotations(
-    annotations: list[FunctionAnnotation],
-    merge_gap_max: int | None = None,
+    annotations: list[FunctionAnnotation], merge_gap_max: int | None = None
 ) -> list[FunctionAnnotation]:
     """Merges annotations into non-overlapping segments.
 
@@ -256,39 +291,73 @@ def merge_annotations(
     return merged
 
 
-def list_nan_to_none(l: list) -> list:
-    if l is None:
-        return None  # type: ignore
-    elif isinstance(l, float):
-        return None if math.isnan(l) else l  # type: ignore
-    elif isinstance(l, list):
-        return [list_nan_to_none(x) for x in l]
-    else:
-        # Don't go into other structures.
-        return l
-
-
-def list_none_to_nan(l: list) -> list:
-    if l is None:
-        return math.nan  # type: ignore
-    elif isinstance(l, list):
-        return [list_none_to_nan(x) for x in l]
-    else:
-        return l
+def replace_inf(data):
+    if data is None:
+        return None
+    array = np.asarray(data, dtype=np.float32)
+    array = np.where(np.isinf(array), 1000, array)
+    return array.tolist()
 
 
 def maybe_tensor(x, convert_none_to_nan: bool = False) -> torch.Tensor | None:
     if x is None:
         return None
+    if isinstance(x, list) and all(isinstance(t, torch.Tensor) for t in x):
+        return torch.stack(x)
     if convert_none_to_nan:
-        x = list_none_to_nan(x)
+        x = np.asarray(x, dtype=np.float32)
+        x = np.where(x is None, np.nan, x)
     return torch.tensor(x)
 
 
 def maybe_list(x, convert_nan_to_none: bool = False) -> list | None:
     if x is None:
         return None
-    x = x.tolist()
-    if convert_nan_to_none:
-        x = list_nan_to_none(x)
-    return x
+    if not convert_nan_to_none:
+        return x.tolist()
+
+    # Handle both torch.tensor and np.ndarray input.
+    if isinstance(x, torch.Tensor):
+        nan_mask = torch.isnan(x).cpu().numpy()
+        np_arr = x.cpu().numpy().astype(object)
+    elif isinstance(x, np.ndarray):
+        nan_mask = np.isnan(x)
+        np_arr = x.astype(object)
+    else:
+        raise TypeError("maybe_list can only work with torch.tensor or np.ndarray.")
+
+    np_arr[nan_mask] = None
+    return np_arr.tolist()
+
+
+def huggingfacehub_login():
+    """Authenticates with the Hugging Face Hub using the HF_TOKEN environment
+    variable, else by prompting the user"""
+    token = os.environ.get("HF_TOKEN")
+    huggingface_hub.login(token=token)
+
+
+def get_chainbreak_boundaries_from_sequence(sequence: Sequence[str]) -> np.ndarray:
+    chain_boundaries = [0]
+    for i, aa in enumerate(sequence):
+        if aa == CHAIN_BREAK_STR:
+            if i == (len(sequence) - 1):
+                raise ValueError(
+                    "Encountered chain break token at end of sequence, this is unexpected."
+                )
+            if i == (len(sequence) - 2):
+                warn(
+                    "Encountered chain break token at penultimate position, this is unexpected."
+                )
+            chain_boundaries.append(i)
+            chain_boundaries.append(i + 1)
+    chain_boundaries.append(len(sequence))
+    assert len(chain_boundaries) % 2 == 0
+    chain_boundaries = np.array(chain_boundaries).reshape(-1, 2)
+    return chain_boundaries
+
+
+def deserialize_tensors(b: bytes) -> Any:
+    buf = BytesIO(zstd.ZSTD_uncompress(b))
+    d = torch.load(buf, map_location="cpu", weights_only=False)
+    return d

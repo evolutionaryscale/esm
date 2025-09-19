@@ -2,10 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from esm.layers.attention import MultiHeadAttention
-from esm.layers.geom_attention import (
-    GeometricReasoningOriginalImpl,
-)
+from esm.layers.attention import FlashMultiHeadAttention, MultiHeadAttention
+from esm.layers.geom_attention import GeometricReasoningOriginalImpl
 from esm.utils.structure.affine3d import Affine3D
 
 
@@ -78,6 +76,7 @@ class UnifiedTransformerBlock(nn.Module):
         n_heads: int,
         use_geom_attn: bool = False,
         use_plain_attn: bool = True,
+        use_flash_attn: bool = False,
         v_heads: int | None = None,
         bias: bool = False,
         expansion_ratio: float = 4.0,
@@ -89,9 +88,14 @@ class UnifiedTransformerBlock(nn.Module):
         super().__init__()
         self.use_plain_attn = use_plain_attn
         if self.use_plain_attn:
-            self.attn = MultiHeadAttention(
-                d_model, n_heads, bias, qk_layernorm=qk_layernorm
-            )
+            if use_flash_attn:
+                self.attn = FlashMultiHeadAttention(
+                    d_model, n_heads, bias, qk_layernorm=qk_layernorm
+                )
+            else:
+                self.attn = MultiHeadAttention(
+                    d_model, n_heads, bias, qk_layernorm=qk_layernorm
+                )
         self.use_geom_attn = use_geom_attn
         if self.use_geom_attn:
             if v_heads is None:

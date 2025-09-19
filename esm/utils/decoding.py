@@ -1,37 +1,29 @@
+import pickle
 import warnings
+from typing import Any, Mapping, cast
 
 import attr
 import torch
+from requests import Response
 
 from esm.models.function_decoder import FunctionTokenDecoder
 from esm.models.vqvae import StructureTokenDecoder
 from esm.sdk.api import ESMProtein, ESMProteinTensor
 from esm.tokenization import TokenizerCollectionProtocol
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
-from esm.tokenization.residue_tokenizer import (
-    ResidueAnnotationsTokenizer,
-)
-from esm.tokenization.sasa_tokenizer import (
-    SASADiscretizingTokenizer,
-)
-from esm.tokenization.sequence_tokenizer import (
-    EsmSequenceTokenizer,
-)
-from esm.tokenization.ss_tokenizer import (
-    SecondaryStructureTokenizer,
-)
-from esm.tokenization.structure_tokenizer import (
-    StructureTokenizer,
-)
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
+from esm.tokenization.residue_tokenizer import ResidueAnnotationsTokenizer
+from esm.tokenization.sasa_tokenizer import SASADiscretizingTokenizer
+from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
+from esm.tokenization.ss_tokenizer import SecondaryStructureTokenizer
+from esm.tokenization.structure_tokenizer import StructureTokenizer
 from esm.tokenization.tokenizer_base import EsmTokenizerBase
+from esm.utils.constants import api as api_constants
 from esm.utils.constants import esm3 as C
 from esm.utils.function.encode_decode import (
     decode_function_tokens,
     decode_residue_annotation_tokens,
 )
-from esm.utils.misc import list_nan_to_none
+from esm.utils.misc import maybe_list
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.types import FunctionAnnotation
 
@@ -130,15 +122,10 @@ def _bos_eos_warn(msg: str, tensor: torch.Tensor, tok: EsmTokenizerBase):
 
 
 def decode_sequence(
-    sequence_tokens: torch.Tensor,
-    sequence_tokenizer: EsmSequenceTokenizer,
-    **kwargs,
+    sequence_tokens: torch.Tensor, sequence_tokenizer: EsmSequenceTokenizer, **kwargs
 ) -> str:
     _bos_eos_warn("Sequence", sequence_tokens, sequence_tokenizer)
-    sequence = sequence_tokenizer.decode(
-        sequence_tokens,
-        **kwargs,
-    )
+    sequence = sequence_tokenizer.decode(sequence_tokens, **kwargs)
     sequence = sequence.replace(" ", "")
     sequence = sequence.replace(sequence_tokenizer.mask_token, C.MASK_STR_SHORT)
     sequence = sequence.replace(sequence_tokenizer.cls_token, "")
@@ -185,20 +172,16 @@ def decode_structure(
 
 
 def decode_secondary_structure(
-    secondary_structure_tokens: torch.Tensor,
-    ss_tokenizer: SecondaryStructureTokenizer,
+    secondary_structure_tokens: torch.Tensor, ss_tokenizer: SecondaryStructureTokenizer
 ) -> str:
     _bos_eos_warn("Secondary structure", secondary_structure_tokens, ss_tokenizer)
     secondary_structure_tokens = secondary_structure_tokens[1:-1]
-    secondary_structure = ss_tokenizer.decode(
-        secondary_structure_tokens,
-    )
+    secondary_structure = ss_tokenizer.decode(secondary_structure_tokens)
     return secondary_structure
 
 
 def decode_sasa(
-    sasa_tokens: torch.Tensor,
-    sasa_tokenizer: SASADiscretizingTokenizer,
+    sasa_tokens: torch.Tensor, sasa_tokenizer: SASADiscretizingTokenizer
 ) -> list[float]:
     if sasa_tokens[0] != 0:
         raise ValueError("SASA does not start with 0 corresponding to BOS token")
@@ -213,12 +196,13 @@ def decode_sasa(
         torch.long,
     ]:
         # Decode if int
+        # handles turning NaN's into None's
         sasa = sasa_tokenizer.decode_float(sasa_tokens)
     else:
         # If already float, just convert to list
-        sasa = sasa_tokens.tolist()
+        sasa = cast(list[float], maybe_list(sasa_tokens, convert_nan_to_none=True))
 
-    return list_nan_to_none(sasa)
+    return sasa
 
 
 def decode_function_annotations(
@@ -249,3 +233,13 @@ def decode_residue_annotations(
         residue_annotations_tokenizer=residue_annotation_decoder,
     )
     return residue_annotations
+
+
+def assemble_message(headers: Mapping[str, str], response: Response) -> dict[str, Any]:
+    content_type = headers.get("Content-Type", "application/json")
+    if content_type == api_constants.MIMETYPE_ES_PICKLE:
+        return pickle.loads(response.content)
+    elif "application/json" in content_type:
+        # Can handle something like "application/json; charset=utf-8"
+        return response.json()
+    raise ValueError(f"Unknown Content-Type: {content_type}")

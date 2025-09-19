@@ -9,10 +9,7 @@ from matplotlib import colormaps
 from PIL import Image
 
 from esm.sdk.api import FunctionAnnotation
-from esm.utils.function.interpro import (
-    InterPro,
-    InterProEntryType,
-)
+from esm.utils.function.interpro import InterPro, InterProEntryType
 
 
 @contextmanager
@@ -26,9 +23,7 @@ def use_backend(backend):
 
 
 def draw_function_annotations(
-    annotations: list[FunctionAnnotation],
-    sequence_length: int,
-    interpro_=InterPro(),
+    annotations: list[FunctionAnnotation], sequence_length: int, interpro_=InterPro()
 ) -> widgets.Image:
     cmap = colormaps["tab10"]
     colors = [cmap(i) for i in range(len(InterProEntryType))]
@@ -63,9 +58,7 @@ def draw_function_annotations(
     with use_backend("agg"):
         fig, ax = plt.subplots()
         record = GraphicRecord(
-            sequence=None,
-            sequence_length=sequence_length,
-            features=features,
+            sequence=None, sequence_length=sequence_length, features=features
         )
         record.plot(ax=ax, plot_sequence=False)
         fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")

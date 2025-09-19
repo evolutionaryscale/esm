@@ -1,8 +1,6 @@
 from ipywidgets import widgets
 
-from esm.widgets.components.sasa_prompt_selector import (
-    create_sasa_prompt_selector,
-)
+from esm.widgets.components.sasa_prompt_selector import create_sasa_prompt_selector
 from esm.widgets.components.secondary_structure_prompt_selector import (
     create_secondary_structure_prompt_selector,
 )
@@ -12,9 +10,7 @@ from esm.widgets.components.sequence_prompt_selector import (
 from esm.widgets.components.structure_prompt_selector import (
     create_structure_prompt_selector,
 )
-from esm.widgets.utils.prompting import (
-    PromptManagerCollection,
-)
+from esm.widgets.utils.prompting import PromptManagerCollection
 from esm.widgets.utils.protein_import import ProteinImporter
 
 

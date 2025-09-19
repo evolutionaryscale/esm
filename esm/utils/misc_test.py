@@ -1,6 +1,5 @@
 """Tests for misc.py"""
 
-
 from esm.utils.misc import merge_annotations
 from esm.utils.types import FunctionAnnotation
 

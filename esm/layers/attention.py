@@ -5,16 +5,17 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from esm.layers.rotary import RotaryEmbedding
+from esm.layers.rotary import RotaryEmbedding, TritonRotaryEmbedding
+
+try:
+    from flash_attn import flash_attn_varlen_qkvpacked_func  # type: ignore
+except (ImportError, RuntimeError):
+    flash_attn_varlen_qkvpacked_func = None
 
 
 class MultiHeadAttention(nn.Module):
     def __init__(
-        self,
-        d_model: int,
-        n_heads: int,
-        bias: bool = False,
-        qk_layernorm: bool = True,
+        self, d_model: int, n_heads: int, bias: bool = False, qk_layernorm: bool = True
     ):
         super().__init__()
 
@@ -47,12 +48,14 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x, seq_id):
         qkv_BLD3 = self.layernorm_qkv(x)
         query_BLD, key_BLD, value_BLD = torch.chunk(qkv_BLD3, 3, dim=-1)
-        query_BLD, key_BLD = self.q_ln(query_BLD), self.k_ln(key_BLD)
+        query_BLD, key_BLD = (
+            self.q_ln(query_BLD).to(query_BLD.dtype),
+            self.k_ln(key_BLD).to(query_BLD.dtype),
+        )
         query_BLD, key_BLD = self._apply_rotary(query_BLD, key_BLD)
 
-        n_heads = self.n_heads
         reshaper = functools.partial(
-            einops.rearrange, pattern="b s (h d) -> b h s d", h=n_heads
+            einops.rearrange, pattern="b s (h d) -> b h s d", h=self.n_heads
         )
 
         query_BHLD, key_BHLD, value_BHLD = map(
@@ -73,5 +76,47 @@ class MultiHeadAttention(nn.Module):
             context_BHLD = F.scaled_dot_product_attention(
                 query_BHLD, key_BHLD, value_BHLD
             )
+
         context_BLD = einops.rearrange(context_BHLD, "b h s d -> b s (h d)")
+
         return self.out_proj(context_BLD)
+
+
+class FlashMultiHeadAttention(MultiHeadAttention):
+    def __init__(
+        self, d_model: int, n_heads: int, bias: bool = False, qk_layernorm: bool = True
+    ):
+        super().__init__(
+            d_model=d_model, n_heads=n_heads, bias=bias, qk_layernorm=qk_layernorm
+        )
+
+        # Flash attention rotary.
+        self.rotary = TritonRotaryEmbedding(d_model // n_heads)
+
+    def forward(self, x, seq_id):
+        assert seq_id.dtype == torch.bool
+
+        seqlens = seq_id.sum(dim=-1, dtype=torch.int32)
+        cu_seqlens = F.pad(torch.cumsum(seqlens, dim=0, dtype=torch.int32), (1, 0))
+        max_seqlen = seqlens.max().item()
+
+        qkv_ND3 = self.layernorm_qkv(x)
+
+        query_ND, key_ND, value_ND = torch.chunk(qkv_ND3, 3, dim=-1)
+        query_ND, key_ND = (
+            self.q_ln(query_ND).to(query_ND.dtype),
+            self.k_ln(key_ND).to(query_ND.dtype),
+        )
+
+        qkv_N3D = torch.stack([query_ND, key_ND, value_ND], dim=1)
+        qkv_N3HD = einops.rearrange(
+            qkv_N3D, pattern="n a (h d) -> n a h d", h=self.n_heads
+        )
+        qkv_N3HD = self.rotary(qkv_N3HD, cu_seqlens, max_seqlen)
+
+        context_NHD = flash_attn_varlen_qkvpacked_func(  # type: ignore
+            qkv_N3HD, cu_seqlens, max_seqlen, softmax_scale=self.d_head**-0.5
+        )
+        context_ND = einops.rearrange(context_NHD, "n h d -> n (h d)")
+
+        return self.out_proj(context_ND)

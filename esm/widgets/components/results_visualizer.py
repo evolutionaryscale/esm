@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Literal
 
@@ -6,14 +7,14 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 
 from esm.sdk.api import ESMProtein
-from esm.widgets.utils.drawing.draw_category_array import (
-    draw_data_array,
-)
+from esm.widgets.utils.drawing.draw_category_array import draw_data_array
 from esm.widgets.utils.drawing.draw_function_annotations import (
     draw_function_annotations,
 )
-from esm.widgets.utils.drawing.draw_protein_structure import (
-    draw_protein_structure,
+from esm.widgets.utils.drawing.draw_protein_structure import draw_protein_structure
+from esm.widgets.utils.serialization import (
+    create_download_button_from_buffer,
+    protein_to_pdb_buffer,
 )
 
 
@@ -145,8 +146,7 @@ def create_sequence_results_page(
     sequence_items = []
     for item in items:
         copy_to_prompt_button = widgets.Button(
-            description="Copy to Prompt",
-            disabled=copy_to_prompt_callback is None,
+            description="Copy to Prompt", disabled=copy_to_prompt_callback is None
         )
         if copy_to_prompt_callback:
             copy_to_prompt_button.on_click(
@@ -185,8 +185,7 @@ def create_sasa_results_page(
     sasa_items = []
     for item in items:
         copy_to_prompt_button = widgets.Button(
-            description="Copy to Prompt",
-            disabled=copy_to_prompt_callback is None,
+            description="Copy to Prompt", disabled=copy_to_prompt_callback is None
         )
         if copy_to_prompt_callback:
             copy_to_prompt_button.on_click(lambda b: copy_to_prompt_callback(item.sasa))
@@ -196,11 +195,7 @@ def create_sasa_results_page(
                 print("Solvent Accessible Surface Area (SASA) is not available.")
             else:
                 sasa = [s or 0 for s in item.sasa]
-                draw_data_array(
-                    output,
-                    data_array=sasa,
-                    cmap="Reds",
-                )
+                draw_data_array(output, data_array=sasa, cmap="Reds")
 
         if copy_to_prompt_callback:
             sasa_items.append(
@@ -222,8 +217,7 @@ def create_secondary_structure_results_page(
     ss_items = []
     for item in items:
         copy_to_prompt_button = widgets.Button(
-            description="Copy to Prompt",
-            disabled=copy_to_prompt_callback is None,
+            description="Copy to Prompt", disabled=copy_to_prompt_callback is None
         )
         if copy_to_prompt_callback:
             copy_to_prompt_button.on_click(
@@ -287,13 +281,19 @@ def create_structure_results_page(
         else:
             ptm_label = widgets.Label(value=f"pTM: {item.ptm.item():.2f}")
         copy_to_prompt_button = widgets.Button(
-            description="Copy to Prompt",
-            disabled=copy_to_prompt_callback is None,
+            description="Copy to Prompt", disabled=copy_to_prompt_callback is None
         )
         if copy_to_prompt_callback:
             copy_to_prompt_button.on_click(
                 lambda b: copy_to_prompt_callback(item.coordinates)
             )
+
+        download_pdb_button = create_download_button_from_buffer(
+            protein_to_pdb_buffer(item),
+            filename=f"generation_{i:02d}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdb",
+            description="Download PDB",
+        )
+
         output = widgets.Output()
         if item.coordinates is None:
             with output:
@@ -332,13 +332,14 @@ def create_structure_results_page(
         col = i % grid_size
 
         if copy_to_prompt_callback:
-            header = widgets.HBox([copy_to_prompt_button, ptm_label])
+            header = widgets.HBox(
+                [copy_to_prompt_button, download_pdb_button, ptm_label]
+            )
         else:
-            header = widgets.HBox([ptm_label])
+            header = widgets.HBox([download_pdb_button, ptm_label])
 
         grid[row, col] = widgets.VBox(
-            [header, output],
-            layout={"border": "1px solid gray"},
+            [header, output], layout={"border": "1px solid gray"}
         )
     return grid
 
@@ -350,8 +351,7 @@ def create_function_annotations_results_page(
     function_items = []
     for item in items:
         copy_to_prompt_button = widgets.Button(
-            description="Copy to Prompt",
-            disabled=copy_to_prompt_callback is None,
+            description="Copy to Prompt", disabled=copy_to_prompt_callback is None
         )
         if copy_to_prompt_callback:
             copy_to_prompt_button.on_click(
@@ -373,8 +373,7 @@ def create_function_annotations_results_page(
             )
         else:
             image = draw_function_annotations(
-                interpro_annotations,
-                sequence_length=len(item),
+                interpro_annotations, sequence_length=len(item)
             )
             if copy_to_prompt_callback:
                 content = widgets.VBox(

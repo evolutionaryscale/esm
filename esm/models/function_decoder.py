@@ -12,9 +12,7 @@ from cloudpathlib import AnyPath
 
 from esm.layers.regression_head import RegressionHead
 from esm.layers.transformer_stack import TransformerStack
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
 from esm.utils.constants import esm3 as C
 from esm.utils.misc import merge_annotations, merge_ranges
 from esm.utils.types import FunctionAnnotation
@@ -39,12 +37,10 @@ class FunctionTokenDecoderConfig:
     # Number of function keywords that can be decoded.
     keyword_vocabulary_size: int = 58641
     # List of supported InterPro ids.
-    interpro_entry_list: str = field(
-        default_factory=lambda: str(C.data_root() / C.INTERPRO_ENTRY)
-    )
+    interpro_entry_list: str = field(default_factory=lambda: str(C.INTERPRO_ENTRY))
     # Path to keywords vocabulary.
     keyword_vocabulary_path: str = field(
-        default_factory=lambda: str(C.data_root() / C.KEYWORDS_VOCABULARY)
+        default_factory=lambda: str(C.data_root("esm3") / C.KEYWORDS_VOCABULARY)
     )
     # Whether to unpack LSH bits into single-bit tokens.
     unpack_lsh_bits: bool = True
@@ -169,13 +165,12 @@ class FunctionTokenDecoder(nn.Module):
             # Apply depth-position offset to use distinct vocabs. See __init__ for
             # explaination.
             vocab_offsets = self.config.function_token_vocab_size * torch.arange(
-                self.config.function_token_depth,
-                device=token_ids.device,
+                self.config.function_token_depth, device=token_ids.device
             )
             inputs = token_ids + vocab_offsets[None, :]
 
         embed = self.embedding(inputs)
-        encoding, _ = self.decoder(embed)
+        encoding, _, _ = self.decoder(embed)
         pooled = torch.mean(encoding, dim=1)
 
         return {name: head(pooled) for name, head in self.heads.items()}
@@ -253,8 +248,7 @@ class FunctionTokenDecoder(nn.Module):
                 annotations.append(annotation)
 
             annotations = merge_annotations(
-                annotations,
-                merge_gap_max=annotation_gap_merge_max,
+                annotations, merge_gap_max=annotation_gap_merge_max
             )
 
             # Drop very small annotations.
@@ -272,9 +266,18 @@ class FunctionTokenDecoder(nn.Module):
         keyword_logits[~where_decode, :] = -torch.inf
         if decode_keywords:
             keyword_preds = F.sigmoid(keyword_logits) >= keywords_threshold
-            outputs["function_keywords"] = self._preds_to_keywords(
-                keyword_preds.detach().cpu().numpy()
+            keywords = self._preds_to_keywords(keyword_preds.detach().cpu().numpy())
+            keywords = merge_annotations(
+                keywords, merge_gap_max=annotation_gap_merge_max
             )
+            if annotation_min_length is not None:
+                keywords = [
+                    annotation
+                    for annotation in keywords
+                    if annotation.end - annotation.start + 1 >= annotation_min_length
+                ]
+
+            outputs["function_keywords"] = keywords
 
         return outputs
 

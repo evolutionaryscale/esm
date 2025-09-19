@@ -25,6 +25,13 @@ from typing import Tuple
 import torch
 from einops import rearrange, repeat
 
+try:
+    from flash_attn.ops.triton.rotary import (  # type:ignore
+        apply_rotary as apply_triton_rotary,
+    )
+except ImportError:
+    apply_triton_rotary = None
+
 
 def rotate_half(x, interleaved=False):
     if not interleaved:
@@ -162,20 +169,22 @@ class RotaryEmbedding(torch.nn.Module):
                 else:
                     inv_freq = self.inv_freq
             else:
-                t = torch.arange(seqlen, device=device, dtype=self.inv_freq.dtype)
+                t = torch.arange(seqlen, device=device, dtype=self.inv_freq.dtype)  # pyright: ignore[reportArgumentType, reportCallIssue]
                 t /= self.scaling_factor
                 inv_freq = self.inv_freq
             # Don't do einsum, it converts fp32 to fp16 under AMP
             # freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            freqs = torch.outer(t, inv_freq)
+            freqs = torch.outer(t, inv_freq)  # pyright: ignore[reportArgumentType]
 
             if self.scale is None:
                 self._cos_cached = torch.cos(freqs).to(dtype)
                 self._sin_cached = torch.sin(freqs).to(dtype)
             else:
                 power = (
-                    torch.arange(
-                        seqlen, dtype=self.scale.dtype, device=self.scale.device
+                    torch.arange(  # pyright: ignore[reportCallIssue]
+                        seqlen,
+                        dtype=self.scale.dtype,  # pyright: ignore[reportArgumentType]
+                        device=self.scale.device,  # pyright: ignore[reportArgumentType]
                     )
                     - seqlen // 2
                 ) / self.scale_base
@@ -219,3 +228,36 @@ class RotaryEmbedding(torch.nn.Module):
             )  # type: ignore
         else:
             assert False
+
+
+class TritonRotaryEmbedding(RotaryEmbedding):
+    def forward(self, qkv: torch.Tensor, cu_seqlens, max_seqlen) -> torch.Tensor:
+        """
+        qkv: (n, 3, nheads, headdim)
+        cu_seqlens: cumulative sequence lengths
+        max_seqlen: max sequence length
+        """
+        self._update_cos_sin_cache(max_seqlen, device=qkv.device, dtype=qkv.dtype)
+        assert self._cos_cached is not None
+        assert self._sin_cached is not None
+
+        assert apply_triton_rotary is not None
+        # In-place modification
+        apply_triton_rotary(
+            qkv[:, 0],
+            self._cos_cached,
+            self._sin_cached,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            inplace=True,
+        )
+        apply_triton_rotary(
+            qkv[:, 1],
+            self._cos_cached,
+            self._sin_cached,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            inplace=True,
+        )
+
+        return qkv

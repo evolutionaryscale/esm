@@ -3,16 +3,9 @@ from typing import Sequence
 
 import torch
 
-from esm.models.function_decoder import (
-    FunctionTokenDecoder,
-    merge_annotations,
-)
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
-from esm.tokenization.residue_tokenizer import (
-    ResidueAnnotationsTokenizer,
-)
+from esm.models.function_decoder import FunctionTokenDecoder, merge_annotations
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
+from esm.tokenization.residue_tokenizer import ResidueAnnotationsTokenizer
 from esm.utils.constants import esm3 as C
 from esm.utils.types import FunctionAnnotation
 
@@ -59,8 +52,7 @@ def encode_function_annotations(
 
     # Convert function token FunctionAnnotations -> Tensor
     function_tokens = function_tokens_tokenizer.tokenize(
-        annotations=ft_annotations,
-        seqlen=len(sequence),
+        annotations=ft_annotations, seqlen=len(sequence)
     )
     function_token_ids = function_tokens_tokenizer.encode(
         function_tokens, add_special_tokens=add_special_tokens
@@ -175,10 +167,7 @@ def decode_residue_annotation_tokens(
                 annotation = FunctionAnnotation(label=label, start=loc, end=loc)
                 annotations.append(annotation)
 
-    annotations = merge_annotations(
-        annotations,
-        merge_gap_max=annotation_gap_merge_max,
-    )
+    annotations = merge_annotations(annotations, merge_gap_max=annotation_gap_merge_max)
 
     # Drop very small annotations.
     if annotation_min_length is not None:

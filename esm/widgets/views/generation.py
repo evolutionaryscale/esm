@@ -2,30 +2,14 @@ from typing import Any, Literal
 
 from ipywidgets import widgets
 
-from esm.sdk.api import (
-    ESM3InferenceClient,
-    ESMProtein,
-)
-from esm.tokenization import get_model_tokenizers
+from esm.sdk.api import ESM3InferenceClient, ESMProtein
 from esm.utils.constants import esm3 as C
-from esm.widgets.components.function_annotator import (
-    create_function_annotator,
-)
-from esm.widgets.utils.prompting import (
-    PromptManagerCollection,
-)
-from esm.widgets.utils.protein_import import (
-    ProteinImporter,
-)
-from esm.widgets.views.esm3_generation_launcher import (
-    create_esm3_generation_launcher,
-)
-from esm.widgets.views.esm3_prompt_preview import (
-    create_esm3_prompt_preview,
-)
-from esm.widgets.views.esm3_prompt_selector import (
-    create_esm3_prompt_selector,
-)
+from esm.widgets.components.function_annotator import create_function_annotator
+from esm.widgets.utils.prompting import PromptManagerCollection
+from esm.widgets.utils.protein_import import ProteinImporter
+from esm.widgets.views.esm3_generation_launcher import create_esm3_generation_launcher
+from esm.widgets.views.esm3_prompt_preview import create_esm3_prompt_preview
+from esm.widgets.views.esm3_prompt_selector import create_esm3_prompt_selector
 
 
 def create_generation_ui(
@@ -48,14 +32,9 @@ def create_generation_ui(
     protein_length_ui = widgets.VBox(
         [
             widgets.HTML(value="<h3>Specify Prompt Length:</h3>"),
-            widgets.HBox(
-                [
-                    protein_length_input,
-                    protein_length_confirm_button,
-                ]
-            ),
+            widgets.HBox([protein_length_input, protein_length_confirm_button]),
             output,
-        ],
+        ]
     )
     loading_ui = widgets.HTML(value="<h3>Loading...</h3>")
 
@@ -106,11 +85,6 @@ def create_generation_ui(
         [protein_importer_ui, protein_length_ui, function_annotator_ui, compile_ui]
     )
 
-    # Tokenizers
-    # NOTE: Uses the esm3 open tokenizer for formatting utilities.
-    # Once the raw request is sent to the server, the server will use the correct tokenizer for the selected model
-    tokenizers = get_model_tokenizers()
-
     # Callbacks
     def update_selector(*args, **kwargs):
         nonlocal prompt_manager_collection
@@ -123,10 +97,7 @@ def create_generation_ui(
             add_annotation_callback=prompt_manager_collection.add_function_annotation,
             delete_annotation_callback=prompt_manager_collection.delete_function_annotation,
         )
-        function_annotator_ui.children = [
-            function_annotator_title,
-            function_annotator,
-        ]
+        function_annotator_ui.children = [function_annotator_title, function_annotator]
 
         if len(protein_importer.protein_list) == 0:
             prompt_ui.children = [
@@ -145,10 +116,7 @@ def create_generation_ui(
             esm3_selector_ui = create_esm3_prompt_selector(
                 prompt_manager_collection, protein_importer=protein_importer
             )
-            selector_ui.children = [
-                selector_title,
-                esm3_selector_ui,
-            ]
+            selector_ui.children = [selector_title, esm3_selector_ui]
             prompt_ui.children = [
                 protein_importer_ui,
                 protein_length_ui,
@@ -167,18 +135,12 @@ def create_generation_ui(
         if protein is not None:
             if modality == "sequence":
                 value = [
-                    C.MASK_STR_SHORT if x == tokenizers.sequence.mask_token else x
-                    for x in value
+                    C.MASK_STR_SHORT if x == C.SEQUENCE_MASK_TOKEN else x for x in value
                 ]
                 value = "".join(value)
 
             elif modality == "secondary_structure":
-                value = [
-                    C.MASK_STR_SHORT
-                    if x == tokenizers.secondary_structure.mask_token
-                    else x
-                    for x in value
-                ]
+                value = [C.MASK_STR_SHORT if x == C.SS8_PAD_TOKEN else x for x in value]
                 value = "".join(value)
 
             setattr(protein, modality, value)
@@ -196,10 +158,7 @@ def create_generation_ui(
                 copy_to_prompt_callback=copy_to_prompt_callback,
             )
             generation_launcher_ui = widgets.VBox(
-                [
-                    widgets.HTML(value="<h3>Generation Config:</h3>"),
-                    generation_launcher,
-                ]
+                [widgets.HTML(value="<h3>Generation Config:</h3>"), generation_launcher]
             )
 
             if len(protein_importer.protein_list) > 0:

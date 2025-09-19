@@ -1,18 +1,31 @@
 import base64
 import json
+from io import StringIO
+from typing import Literal
 
 from ipywidgets import widgets
 
 from esm.sdk.api import ESMProtein
 
 
-def create_download_button(
-    protein_list: list[ESMProtein], filename: str
+def protein_to_pdb_buffer(protein: ESMProtein) -> bytes:
+    pdb_buffer = StringIO()
+    protein.to_pdb(pdb_buffer)
+    pdb_buffer.seek(0)
+    return pdb_buffer.read().encode()
+
+
+def create_download_button_from_buffer(
+    buffer: bytes,
+    filename: str,
+    description: str = "Download",
+    type: Literal["json", "bytes"] = "bytes",
 ) -> widgets.HTML:
-    serialized_proteins = [serialize_protein(p) for p in protein_list]
-    serialized_data = json.dumps(serialized_proteins, indent=4)
-    b64 = base64.b64encode(serialized_data.encode()).decode()
-    payload = f"data:text/json;base64,{b64}"
+    b64 = base64.b64encode(buffer).decode()
+    if type == "json":
+        payload = f"data:text/json;base64,{b64}"
+    elif type == "bytes":
+        payload = f"data:application/octet-stream;base64,{b64}"
     html_buttons = f"""
     <html>
     <head>
@@ -20,7 +33,7 @@ def create_download_button(
     </head>
     <body>
     <a download="{filename}" href="{payload}" download>
-    <button class="p-Widget jupyter-widgets jupyter-button widget-button mod-warning">Download Results</button>
+    <button class="p-Widget jupyter-widgets jupyter-button widget-button">{description}</button>
     </a>
     </body>
     </html>
@@ -29,9 +42,20 @@ def create_download_button(
     return download_link
 
 
-def serialize_protein(
-    protein: ESMProtein,
-) -> str:
+def create_download_results_button(
+    protein_list: list[ESMProtein], filename: str
+) -> widgets.HTML:
+    serialized_proteins = [serialize_protein(p) for p in protein_list]
+    serialized_data = json.dumps(serialized_proteins, indent=4)
+    return create_download_button_from_buffer(
+        buffer=serialized_data.encode(),
+        filename=filename,
+        type="json",
+        description="Download As JSON",
+    )
+
+
+def serialize_protein(protein: ESMProtein) -> str:
     protein_dict = {
         "sequence": protein.sequence,
         "coordinates": protein.coordinates.tolist()

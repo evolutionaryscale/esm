@@ -6,13 +6,9 @@ from esm.sdk.api import (
     ESMProteinError,
     GenerationConfig,
 )
-from esm.widgets.components.results_visualizer import (
-    create_results_visualizer,
-)
+from esm.widgets.components.results_visualizer import create_results_visualizer
 from esm.widgets.utils.printing import wrapped_print
-from esm.widgets.utils.protein_import import (
-    ProteinImporter,
-)
+from esm.widgets.utils.protein_import import ProteinImporter
 
 
 def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
@@ -29,9 +25,9 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         ]
     )
 
-    input_ui = widgets.Tab(children=[protein_importer.importer_ui, sequence_input_ui])
-    input_ui.set_title(0, "Add Protein")
-    input_ui.set_title(1, "Enter Sequence")
+    input_ui = widgets.Tab(children=[sequence_input_ui, protein_importer.importer_ui])
+    input_ui.set_title(0, "Enter Sequence")
+    input_ui.set_title(1, "Add Protein")
 
     predict_button = widgets.Button(
         description="Predict",
@@ -45,7 +41,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
     prediction_ui = widgets.VBox([input_ui, output])
 
     def get_protein() -> ESMProtein:
-        if input_ui.selected_index == 0:
+        if input_ui.selected_index == 1:
             [first_protein] = protein_importer.protein_list
             protein_id, protein_chain = first_protein
             protein = ESMProtein.from_protein_chain(protein_chain)
@@ -70,7 +66,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         prediction_ui.children = [input_ui, predict_button, output]
 
     def validate_predict(_):
-        if input_ui.selected_index == 0:
+        if input_ui.selected_index == 1:
             if len(protein_importer.protein_list) > 0:
                 predict_button.disabled = False
             else:
@@ -85,11 +81,7 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
         try:
             # Reset the output and results
             output.clear_output()
-            prediction_ui.children = [
-                input_ui,
-                predict_button,
-                output,
-            ]
+            prediction_ui.children = [input_ui, predict_button, output]
             # Predict the protein's properties
             with output:
                 protein = get_protein()
@@ -159,19 +151,10 @@ def create_prediction_ui(client: ESM3InferenceClient) -> widgets.Widget:
                 wrapped_print(e)
 
     predict_button.on_click(on_click_predict)
-    protein_importer.entries_box.observe(
-        on_new_protein,
-        names="children",
-    )
+    protein_importer.entries_box.observe(on_new_protein, names="children")
     protein_importer.register_delete_callback(lambda: validate_predict(None))
 
-    sequence_input_ui.children[1].observe(
-        on_new_sequence,
-        names="value",
-    )
-    input_ui.observe(
-        validate_predict,
-        names="selected_index",
-    )
+    sequence_input_ui.children[1].observe(on_new_sequence, names="value")
+    input_ui.observe(validate_predict, names="selected_index")
 
     return prediction_ui

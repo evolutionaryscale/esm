@@ -4,9 +4,7 @@ import pygtrie
 from ipywidgets import widgets
 
 from esm.sdk.api import FunctionAnnotation
-from esm.tokenization.function_tokenizer import (
-    InterProQuantizedTokenizer,
-)
+from esm.tokenization.function_tokenizer import InterProQuantizedTokenizer
 
 TRIE: pygtrie.CharTrie | None = None
 
@@ -116,19 +114,10 @@ def create_function_annotator(
                 )
 
             delete_button = widgets.Button(
-                description="Delete",
-                tooltip="Delete this annotation",
-                icon="trash",
+                description="Delete", tooltip="Delete this annotation", icon="trash"
             )
-            entry = widgets.HBox(
-                [
-                    delete_button,
-                    widgets.Label(value=function_str),
-                ]
-            )
-            delete_button.on_click(
-                on_delete_click,
-            )
+            entry = widgets.HBox([delete_button, widgets.Label(value=function_str)])
+            delete_button.on_click(on_delete_click)
             entries.children += (entry,)
 
         except Exception as e:

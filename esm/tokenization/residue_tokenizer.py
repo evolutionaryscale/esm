@@ -13,13 +13,9 @@ Sample = dict[str, Any]
 
 
 class ResidueAnnotationsTokenizer(EsmTokenizerBase):
-    def __init__(
-        self,
-        csv_path: str | None = None,
-        max_annotations: int = 16,
-    ):
+    def __init__(self, csv_path: str | None = None, max_annotations: int = 16):
         if csv_path is None:
-            csv_path = str(C.data_root() / C.RESID_CSV)
+            csv_path = str(C.data_root("esm3") / C.RESID_CSV)
         self.csv_path = csv_path
         self.max_annotations = max_annotations
 

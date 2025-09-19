@@ -1,13 +1,10 @@
 import os
 from functools import partial
+from textwrap import dedent
 
-from huggingface_hub import notebook_login
 from ipywidgets import widgets
 
-from esm.widgets.utils.clients import (
-    get_forge_client,
-    get_local_client,
-)
+from esm.widgets.utils.clients import get_forge_client, get_local_client
 from esm.widgets.utils.types import ClientInitContainer
 
 
@@ -24,7 +21,6 @@ def create_login_ui(client_container: ClientInitContainer):
         <a href="https://forge.evolutionaryscale.ai/console" target="_blank">Forge console</a>.
         The console also provides a comprehensive list of models available to each user.</p>
         <p><strong>Local:</strong> Self-hosted solution that supports the <code>esm3-sm-open-v1</code> model exclusively.
-        This option requires users to access the model through <a href="https://huggingface.co/EvolutionaryScale/esm3-sm-open-v1" target="_blank">HuggingFace</a> and will download the necessary weights.
         A GPU-enabled instance is recommended for running the model locally. All data processing with the Local API is conducted on the user's machine, ensuring that no data is transmitted to EvolutionaryScale servers.</p>
     </div>
     """
@@ -50,11 +46,10 @@ def create_login_ui(client_container: ClientInitContainer):
 
     # ======== Login ========
 
-    login_header = widgets.HTML(value="<h2>Login with Token</h2>")
     login_ui = widgets.VBox([infobox, selection_ui])
 
     forge = widgets.VBox()
-    oss = widgets.Output()
+
     # If not logged in, show login form
     forge_info = widgets.HTML(
         value="<p>Copy a token from your <a href='https://forge.evolutionaryscale.ai/console'>Forge console page</a> and paste it below:</p>"
@@ -76,7 +71,7 @@ def create_login_ui(client_container: ClientInitContainer):
     forge_logged_in = widgets.HTML(
         value="<p>You are already logged in. You can now use the Forge API.</p>"
     )
-    forge_login_with_new_token = widgets.Button(description="Login with new token")
+    forge_login_with_new_token = widgets.Button(description="Use different token")
     forge_logged_in_view = widgets.VBox([forge_logged_in, forge_login_with_new_token])
 
     forge_token = os.environ.get("ESM_API_KEY", None)
@@ -94,7 +89,7 @@ def create_login_ui(client_container: ClientInitContainer):
         layout={"width": "50%"},
     )
     forge_model = widgets.Text(
-        value="esm3-md-v1",
+        value="esm3-open",
         description="Model Name:",
         disabled=False,
         layout={"width": "50%"},
@@ -119,6 +114,7 @@ def create_login_ui(client_container: ClientInitContainer):
         forge.children = [forge_login_view]
 
     def on_selection_change(change):
+        client_container.metadata["inference_option"] = change["new"]
         if change["new"] == "Forge API":
             model_selection_ui.children = [
                 model_selection_header,
@@ -128,28 +124,20 @@ def create_login_ui(client_container: ClientInitContainer):
             login_ui.children = [
                 infobox,
                 selection_ui,
-                login_header,
                 forge,
                 model_selection_ui,
                 start_button,
                 start_msg_output,
             ]
         elif change["new"] == "Local":
-            model_selection_ui.children = [
-                model_selection_header,
-                local_model,
-            ]
+            model_selection_ui.children = [model_selection_header, local_model]
             login_ui.children = [
                 infobox,
                 selection_ui,
-                login_header,
-                oss,
                 model_selection_ui,
                 start_button,
                 start_msg_output,
             ]
-            with oss:
-                notebook_login()
 
     def on_start(*args):
         if selection_ui.children[1].value == "Forge API":
@@ -159,14 +147,18 @@ def create_login_ui(client_container: ClientInitContainer):
         else:
             client_container.client_init_callback = partial(get_local_client)
 
+        start_msg_output.clear_output()
         with start_msg_output:
-            start_msg_output.clear_output()
-            print(
-                f"""Initializing ESM3 Inference Client with the following parameters:
+            msg = dedent(
+                f"""
+                Parameters for the ESM3 Inference Client:
                 - Inference Option: {selection_ui.children[1].value}
                 - Model Name: {forge_model.value if selection_ui.children[1].value == "Forge API" else local_model.value}
+
+                Please initialize the client by executing the next code cell in the notebook.
                 """
             )
+            print(msg)
 
     forge_login.on_click(on_forge_login_clicked)
     forge_login_with_new_token.on_click(on_forge_login_with_new_token_clicked)

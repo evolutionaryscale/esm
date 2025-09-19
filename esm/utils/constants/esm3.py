@@ -30,10 +30,8 @@ STRUCTURE_PAD_TOKEN = VQVAE_SPECIAL_TOKENS["PAD"]
 STRUCTURE_CHAINBREAK_TOKEN = VQVAE_SPECIAL_TOKENS["CHAINBREAK"]
 STRUCTURE_UNDEFINED_TOKEN = 955
 
-SASA_UNK_TOKEN = 2
 SASA_PAD_TOKEN = 0
 
-SS8_UNK_TOKEN = 2
 SS8_PAD_TOKEN = 0
 
 INTERPRO_PAD_TOKEN = 0
@@ -99,32 +97,34 @@ TFIDF_VECTOR_SIZE = 58641
 
 @staticmethod
 @cache
-def data_root():
-    # Try a few default directories
-    for path in [
-        "esm/data",
-        "esm/data",
-    ]:
-        if (p := Path(path)).exists():
-            return p.parent
+def data_root(model: str):
     if "INFRA_PROVIDER" in os.environ:
         return Path("")
     # Try to download from hugginface if it doesn't exist
-    path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
+    if model.startswith("esm3"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
+    elif model.startswith("esmc-300"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esmc-300m-2024-12"))
+    elif model.startswith("esmc-600"):
+        path = Path(snapshot_download(repo_id="EvolutionaryScale/esmc-600m-2024-12"))
+    else:
+        raise ValueError(f"{model=} is an invalid model name.")
     return path
 
 
-INTERPRO_ENTRY = "data/entry_list_safety_29026.list"
-INTERPRO_HIERARCHY = "data/ParentChildTreeFile.txt"
-INTERPRO2GO = "data/ParentChildTreeFile.txt"
+IN_REPO_DATA_FOLDER = Path(__file__).parents[2] / "data"
+
+INTERPRO_ENTRY = IN_REPO_DATA_FOLDER / "entry_list_safety_29026.list"
+INTERPRO_HIERARCHY = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
+INTERPRO2GO = IN_REPO_DATA_FOLDER / "ParentChildTreeFile.txt"
 INTERPRO_2ID = "data/tag_dict_4_safety_filtered.json"
 
-LSH_TABLE_PATHS = {
-    "8bit": "data/hyperplanes_8bit_58641.npz",
-}
+LSH_TABLE_PATHS = {"8bit": "data/hyperplanes_8bit_58641.npz"}
 
-KEYWORDS_VOCABULARY = "data/keyword_vocabulary_safety_filtered_58641.txt"
-KEYWORDS_IDF = "data/keyword_idf_safety_filtered_58641.npy"
+KEYWORDS_VOCABULARY = (
+    IN_REPO_DATA_FOLDER / "keyword_vocabulary_safety_filtered_58641.txt"
+)
+KEYWORDS_IDF = IN_REPO_DATA_FOLDER / "keyword_idf_safety_filtered_58641.npy"
 
 RESID_CSV = "data/uniref90_and_mgnify90_residue_annotations_gt_1k_proteins.csv"
-INTERPRO2KEYWORDS = "data/interpro_29026_to_keywords_58641.csv"
+INTERPRO2KEYWORDS = IN_REPO_DATA_FOLDER / "interpro_29026_to_keywords_58641.csv"

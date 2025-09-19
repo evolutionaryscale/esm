@@ -43,10 +43,7 @@ def get_protein_normalization_frame(coords: Tensor) -> Affine3D:
         Affine3D: tensor of Affine3D frame
     """
     bb_coords = index_by_atom_name(coords, ["N", "CA", "C"], dim=-2)
-    coord_mask = torch.all(
-        torch.all(torch.isfinite(bb_coords), dim=-1),
-        dim=-1,
-    )
+    coord_mask = torch.all(torch.all(torch.isfinite(bb_coords), dim=-1), dim=-1)
 
     average_position_per_n_ca_c = bb_coords.masked_fill(
         ~coord_mask[..., None, None], 0

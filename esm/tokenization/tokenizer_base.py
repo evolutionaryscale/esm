@@ -3,56 +3,23 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class EsmTokenizerBase(Protocol):
-    def encode(self, *args, **kwargs):
-        ...
+    mask_token: str
+    mask_token_id: int
+    bos_token: str
+    bos_token_id: int
+    eos_token: str
+    eos_token_id: int
+    pad_token: str
+    pad_token_id: int
+    chain_break_token: str
+    chain_break_token_id: int
 
-    def decode(self, *args, **kwargs):
-        ...
+    def encode(self, *args, **kwargs): ...
 
-    @property
-    def mask_token(self) -> str:
-        ...
-
-    @property
-    def mask_token_id(self) -> int:
-        ...
-
-    @property
-    def bos_token(self) -> str:
-        ...
+    def decode(self, *args, **kwargs): ...
 
     @property
-    def bos_token_id(self) -> int:
-        ...
+    def all_token_ids(self): ...
 
     @property
-    def eos_token(self) -> str:
-        ...
-
-    @property
-    def eos_token_id(self) -> int:
-        ...
-
-    @property
-    def pad_token(self) -> str:
-        ...
-
-    @property
-    def pad_token_id(self) -> int:
-        ...
-
-    @property
-    def chain_break_token(self) -> str:
-        ...
-
-    @property
-    def chain_break_token_id(self) -> int:
-        ...
-
-    @property
-    def all_token_ids(self):
-        ...
-
-    @property
-    def special_token_ids(self):
-        ...
+    def special_token_ids(self): ...
