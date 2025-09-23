@@ -63,10 +63,10 @@ def decode_protein_tensor(
     if input.sequence is not None:
         sequence = decode_sequence(input.sequence, tokenizers.sequence)
 
-    plddt, ptm = None, None
+    plddt, ptm, pae = None, None, None
     if input.structure is not None:
         # Note: We give priority to the structure tokens over the coordinates when decoding
-        coordinates, plddt, ptm = decode_structure(
+        coordinates, plddt, ptm, pae = decode_structure(
             structure_tokens=input.structure,
             structure_decoder=structure_token_decoder,
             structure_tokenizer=tokenizers.structure,
@@ -106,6 +106,7 @@ def decode_protein_tensor(
         coordinates=coordinates,
         plddt=plddt,
         ptm=ptm,
+        pae=pae,
         potential_sequence_of_concern=input.potential_sequence_of_concern,
     )
 
@@ -139,7 +140,7 @@ def decode_structure(
     structure_decoder: StructureTokenDecoder,
     structure_tokenizer: StructureTokenizer,
     sequence: str | None = None,
-) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
     is_singleton = len(structure_tokens.size()) == 1
     if is_singleton:
         structure_tokens = structure_tokens.unsqueeze(0)
@@ -155,20 +156,17 @@ def decode_structure(
     ]  # Remove BOS and EOS tokens
     bb_coords = bb_coords.detach().cpu()
 
-    if "plddt" in decoder_output:
-        plddt = decoder_output["plddt"][0, 1:-1]
-        plddt = plddt.detach().cpu()
-    else:
-        plddt = None
+    plddt = decoder_output.get("plddt", None)
+    if plddt is not None:
+        plddt = plddt[0, 1:-1].detach().cpu()
 
-    if "ptm" in decoder_output:
-        ptm = decoder_output["ptm"]
-    else:
-        ptm = None
+    ptm = decoder_output.get("ptm", None)
+
+    pae = decoder_output.get("predicted_aligned_error", None)
 
     chain = ProteinChain.from_backbone_atom_coordinates(bb_coords, sequence=sequence)
     chain = chain.infer_oxygen()
-    return torch.tensor(chain.atom37_positions), plddt, ptm
+    return torch.tensor(chain.atom37_positions), plddt, ptm, pae
 
 
 def decode_secondary_structure(
