@@ -31,3 +31,7 @@ repos:
       language: system
       types: [python]
       pass_filenames: true # For speed, we only check the files that are changed
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.24.2
+  hooks:
+    - id: gitleaks

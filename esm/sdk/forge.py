@@ -29,14 +29,6 @@ from esm.sdk.retry import retry_decorator
 from esm.utils.constants.api import MIMETYPE_ES_PICKLE
 from esm.utils.misc import deserialize_tensors, maybe_list, maybe_tensor
 from esm.utils.msa import MSA
-from esm.utils.structure.input_builder import (
-    StructurePredictionInput,
-    serialize_structure_prediction_input,
-)
-from esm.utils.structure.molecular_complex import (
-    MolecularComplex,
-    MolecularComplexResult,
-)
 from esm.utils.types import FunctionAnnotation
 
 
@@ -216,70 +208,6 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             return e
 
         return self._process_fold_response(data, sequence)
-
-    @retry_decorator
-    async def async_fold_all_atom(
-        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
-    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
-        """Fold a molecular complex containing proteins, nucleic acids, and/or ligands.
-
-        Args:
-            all_atom_input: StructurePredictionInput containing sequences for different molecule types
-            model_name: Override the client level model name if needed
-        """
-        request = self._process_fold_all_atom_request(
-            all_atom_input, model_name if model_name is not None else self.model
-        )
-
-        try:
-            data = await self._async_post("fold_all_atom", request)
-        except ESMProteinError as e:
-            return e
-
-        return self._process_fold_all_atom_response(data)
-
-    @retry_decorator
-    def fold_all_atom(
-        self, all_atom_input: StructurePredictionInput, model_name: str | None = None
-    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
-        """Predict coordinates for a molecular complex containing proteins, dna, rna, and/or ligands.
-
-        Args:
-            all_atom_input: StructurePredictionInput containing sequences for different molecule types
-            model_name: Override the client level model name if needed
-        """
-        request = self._process_fold_all_atom_request(
-            all_atom_input, model_name if model_name is not None else self.model
-        )
-
-        try:
-            data = self._post("fold_all_atom", request)
-        except ESMProteinError as e:
-            return e
-
-        return self._process_fold_all_atom_response(data)
-
-    @staticmethod
-    def _process_fold_all_atom_request(
-        all_atom_input: StructurePredictionInput, model_name: str | None = None
-    ) -> dict[str, Any]:
-        request: dict[str, Any] = {
-            "all_atom_input": serialize_structure_prediction_input(all_atom_input),
-            "model": model_name,
-        }
-
-        return request
-
-    @staticmethod
-    def _process_fold_all_atom_response(data: dict[str, Any]) -> MolecularComplexResult:
-        complex_data = data.get("complex")
-        molecular_complex = MolecularComplex.from_state_dict(complex_data)
-        return MolecularComplexResult(
-            complex=molecular_complex,
-            plddt=maybe_tensor(data.get("plddt"), convert_none_to_nan=True),
-            ptm=data.get("ptm", None),
-            distogram=maybe_tensor(data.get("distogram"), convert_none_to_nan=True),
-        )
 
     @retry_decorator
     async def async_inverse_fold(
