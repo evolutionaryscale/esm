@@ -51,10 +51,21 @@ class PocketConditioning:
 
 
 @dataclass
+class CovalentBond:
+    chain_id1: str
+    res_idx1: int
+    atom_idx1: int
+    chain_id2: str
+    res_idx2: int
+    atom_idx2: int
+
+
+@dataclass
 class StructurePredictionInput:
     sequences: Sequence[ProteinInput | RNAInput | DNAInput | LigandInput]
     pocket: PocketConditioning | None = None
     distogram_conditioning: list[DistogramConditioning] | None = None
+    covalent_bonds: list[CovalentBond] | None = None
 
 
 def serialize_structure_prediction_input(all_atom_input: StructurePredictionInput):
@@ -92,4 +103,20 @@ def serialize_structure_prediction_input(all_atom_input: StructurePredictionInpu
         else:
             raise ValueError(f"Unsupported sequence input type: {type(seq_input)}")
 
-    return {"sequences": sequences}
+    result: dict[str, Any] = {"sequences": sequences}
+
+    # Add covalent bonds if present
+    if all_atom_input.covalent_bonds is not None:
+        result["covalent_bonds"] = [
+            {
+                "chain_id1": bond.chain_id1,
+                "res_idx1": bond.res_idx1,
+                "atom_idx1": bond.atom_idx1,
+                "chain_id2": bond.chain_id2,
+                "res_idx2": bond.res_idx2,
+                "atom_idx2": bond.atom_idx2,
+            }
+            for bond in all_atom_input.covalent_bonds
+        ]
+
+    return result
