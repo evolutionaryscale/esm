@@ -128,7 +128,7 @@ class _BaseForgeInferenceClient:
         except Exception as e:
             raise ESMProteinError(
                 error_code=500,
-                error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
+                error_msg=f"Failed to submit request to {endpoint}. Error: {str(e)}",
             )
 
     def _post(
@@ -158,5 +158,5 @@ class _BaseForgeInferenceClient:
         except Exception as e:
             raise ESMProteinError(
                 error_code=500,
-                error_msg=f"Failed to submit request to {endpoint}. Error: {e}",
+                error_msg=f"Failed to submit request to {endpoint}. Error: {str(e)}",
             )

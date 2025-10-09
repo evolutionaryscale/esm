@@ -35,6 +35,8 @@ class MolecularComplexResult:
     pair_chains_iptm: torch.Tensor | None = None
     output_embedding_sequence: torch.Tensor | None = None
     output_embedding_pair_pooled: torch.Tensor | None = None
+    residue_index: torch.Tensor | None = None
+    entity_id: torch.Tensor | None = None
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 
@@ -53,7 +54,9 @@ def hhfilter(
     qsc: float = -20.0,
     binary: str = "hhfilter",
 ) -> list[int]:
-    with tempfile.TemporaryDirectory(dir="/dev/shm") as tempdirname:
+    with tempfile.TemporaryDirectory(
+        dir="/dev/shm" if os.path.exists("/dev/shm") else None
+    ) as tempdirname:
         tempdir = Path(tempdirname)
         fasta_file = tempdir / "input.fasta"
         fasta_file.write_text(
