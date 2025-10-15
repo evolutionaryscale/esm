@@ -36,6 +36,16 @@ class ESMProtein(ProteinType):
     ptm: torch.Tensor | None = None
     pae: torch.Tensor | None = None
 
+    crmsd: torch.Tensor | None = None
+    globularity: torch.Tensor | None = None
+    interface_annotations: list[str] | None = None
+    interface_ptm: torch.Tensor | None = None
+    pair_chains_iptm: torch.Tensor | None = None
+    output_embedding_sequence: torch.Tensor | None = None
+    output_embedding_pair_pooled: torch.Tensor | None = None
+    residue_index: torch.Tensor | None = None
+    entity_id: torch.Tensor | None = None
+
     # When calling EvolutionaryScale API, use this flag to disclose any
     # sequences that may potentially have concerns.
     # Such sequences may not go through standard safety filter for approved users.
@@ -326,6 +336,17 @@ class GenerationConfig:
 class InverseFoldingConfig:
     invalid_ids: Sequence[int] = []
     temperature: float = 1.0
+
+
+@define
+class FoldingConfig:
+    include_distogram: bool = False
+    include_pae: bool = False
+    include_pair_chains_iptm: bool = False
+    num_sampling_steps: int = 200
+    num_recycles: int = 3
+    seed: int | None = None
+    include_embeddings: bool = False
 
 
 ## Low Level Endpoint Types

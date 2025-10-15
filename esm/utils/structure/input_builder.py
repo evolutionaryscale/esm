@@ -3,6 +3,8 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from esm.utils.msa import MSA
+
 
 @dataclass
 class Modification:
@@ -15,6 +17,7 @@ class ProteinInput:
     id: str | list[str]
     sequence: str
     modifications: list[Modification] | None = None
+    msa: MSA | None = None
 
 
 @dataclass
@@ -81,6 +84,16 @@ def serialize_structure_prediction_input(all_atom_input: StructurePredictionInpu
                 for mod in seq_input.modifications
             ]
             chain_data["modifications"] = mods
+        if not hasattr(seq_input, "msa"):
+            pass
+        elif seq_input.msa is None:
+            chain_data["msa"] = None
+        elif isinstance(seq_input.msa, MSA):
+            chain_data["msa"] = {"sequences": seq_input.msa.sequences}
+        else:
+            raise AttributeError(
+                f'MSA must be one of None, MSA, or "auto". Got {seq_input.msa} instead.'
+            )
         return chain_data
 
     sequences = []

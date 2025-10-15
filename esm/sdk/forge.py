@@ -4,7 +4,7 @@ import asyncio
 import base64
 import pickle
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import torch
 
@@ -14,12 +14,14 @@ from esm.sdk.api import (
     ESMProtein,
     ESMProteinError,
     ESMProteinTensor,
+    FoldingConfig,
     ForwardAndSampleOutput,
     ForwardTrackData,
     GenerationConfig,
     InverseFoldingConfig,
     LogitsConfig,
     LogitsOutput,
+    ProteinChain,
     ProteinType,
     SamplingConfig,
     SamplingTrackConfig,
@@ -29,6 +31,14 @@ from esm.sdk.retry import retry_decorator
 from esm.utils.constants.api import MIMETYPE_ES_PICKLE
 from esm.utils.misc import deserialize_tensors, maybe_list, maybe_tensor
 from esm.utils.msa import MSA
+from esm.utils.structure.input_builder import (
+    StructurePredictionInput,
+    serialize_structure_prediction_input,
+)
+from esm.utils.structure.molecular_complex import (
+    MolecularComplex,
+    MolecularComplexResult,
+)
 from esm.utils.types import FunctionAnnotation
 
 
@@ -93,8 +103,36 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         )
 
     @staticmethod
-    def _process_fold_request(sequence: str, model_name: str | None):
+    def _process_fold_request(
+        sequence: str,
+        msa: MSA | Literal["auto"] | None,
+        config: FoldingConfig,
+        target_structure: ProteinChain | None,
+        model_name: str | None,
+    ):
         request: dict[str, Any] = {"sequence": sequence}
+
+        if msa is None:
+            request["msa"] = None
+        elif isinstance(msa, MSA):
+            request["msa"] = {"sequences": msa.sequences}
+        else:
+            raise AttributeError(
+                f'MSA must be one of None, MSA, or "auto". Got {msa} instead.'
+            )
+
+        request["include_distogram"] = config.include_distogram
+        request["include_pae"] = config.include_pae
+        request["include_pair_chains_iptm"] = config.include_pair_chains_iptm
+        request["num_sampling_steps"] = config.num_sampling_steps
+        request["num_recycles"] = config.num_recycles
+        request["seed"] = config.seed
+        request["target_structure"] = (
+            target_structure.state_dict(json_serializable=True)
+            if target_structure
+            else None
+        )
+        request["include_embeddings"] = config.include_embeddings
 
         request["model"] = model_name
 
@@ -107,6 +145,21 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             coordinates=maybe_tensor(data["coordinates"], convert_none_to_nan=True),
             ptm=maybe_tensor(data.get("ptm", None)),
             plddt=maybe_tensor(data.get("plddt", None), convert_none_to_nan=True),
+            pae=maybe_tensor(data.get("pae", None)),
+            interface_ptm=maybe_tensor(data.get("interface_ptm", None)),
+            pair_chains_iptm=maybe_tensor(data.get("pair_chains_iptm", None)),
+            output_embedding_sequence=maybe_tensor(
+                data.get("output_embedding_sequence", None), convert_none_to_nan=True
+            ),
+            output_embedding_pair_pooled=maybe_tensor(
+                data.get("output_embedding_pair_pooled", None), convert_none_to_nan=True
+            ),
+            residue_index=maybe_tensor(
+                data.get("residue_index", None), convert_none_to_nan=True
+            ),
+            entity_id=maybe_tensor(
+                data.get("entity_id", None), convert_none_to_nan=True
+            ),
         )
 
     @staticmethod
@@ -154,21 +207,33 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         sequence: str,
         potential_sequence_of_concern: bool = False,
         model_name: str | None = None,
+        msa: MSA | Literal["auto"] | None = None,
+        config: FoldingConfig = FoldingConfig(),
+        target_structure: ProteinChain | None = None,
     ) -> ESMProtein | ESMProteinError:
         """Predict coordinates for a protein sequence.
 
         Args:
             sequence: Protein sequence to be folded.
             model_name: Override the client level model name if needed.
+            msa: Optional multi-sequence alignment data that may help some models fold the sequence.
+            config: Optional configuration for folding parameters.
+            target_structure: Optional target structure to use for distogram conditioning.
 
         Deprecated:
             potential_sequence_of_concern: this parameter is largely deprecated
                 and ignored by the folding endpoint.
         """
         del potential_sequence_of_concern
+        if isinstance(msa, str) and msa == "auto":
+            msa = await self._async_fetch_msa(sequence)
 
         request = self._process_fold_request(
-            sequence, model_name if model_name is not None else self.model
+            sequence,
+            msa,
+            config,
+            target_structure,
+            model_name if model_name is not None else self.model,
         )
 
         try:
@@ -184,12 +249,18 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         sequence: str,
         potential_sequence_of_concern: bool = False,
         model_name: str | None = None,
+        msa: MSA | Literal["auto"] | None = None,
+        config: FoldingConfig = FoldingConfig(),
+        target_structure: ProteinChain | None = None,
     ) -> ESMProtein | ESMProteinError:
         """Predict coordinates for a protein sequence.
 
         Args:
             sequence: Protein sequence to be folded.
             model_name: Override the client level model name if needed.
+            msa: Optional multi-sequence alignment data that may help some models fold the sequence.
+            config: Optional configuration for folding parameters.
+            target_structure: Optional target structure to use for distogram conditioning.
 
         Deprecated:
             potential_sequence_of_concern: this parameter is largely deprecated
@@ -197,9 +268,15 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         """
 
         del potential_sequence_of_concern
+        if isinstance(msa, str) and msa == "auto":
+            msa = self._fetch_msa(sequence)
 
         request = self._process_fold_request(
-            sequence, model_name if model_name is not None else self.model
+            sequence,
+            msa,
+            config,
+            target_structure,
+            model_name if model_name is not None else self.model,
         )
 
         try:
@@ -208,6 +285,99 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
             return e
 
         return self._process_fold_response(data, sequence)
+
+    @retry_decorator
+    async def async_fold_all_atom(
+        self,
+        all_atom_input: StructurePredictionInput,
+        config: FoldingConfig = FoldingConfig(),
+        model_name: str | None = None,
+    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
+        """Fold a molecular complex containing proteins, nucleic acids, and/or ligands.
+
+        Args:
+            all_atom_input: StructurePredictionInput containing sequences for different molecule types
+            config: Optional configuration for folding parameters.
+            model_name: Override the client level model name if needed
+        """
+        request = self._process_fold_all_atom_request(
+            all_atom_input, config, model_name if model_name is not None else self.model
+        )
+
+        try:
+            data = await self._async_post("fold_all_atom", request)
+        except ESMProteinError as e:
+            return e
+
+        return self._process_fold_all_atom_response(data)
+
+    @retry_decorator
+    def fold_all_atom(
+        self,
+        all_atom_input: StructurePredictionInput,
+        model_name: str | None = None,
+        config: FoldingConfig = FoldingConfig(),
+    ) -> MolecularComplexResult | list[MolecularComplexResult] | ESMProteinError:
+        """Predict coordinates for a molecular complex containing proteins, dna, rna, and/or ligands.
+
+        Args:
+            all_atom_input: StructurePredictionInput containing sequences for different molecule types
+            model_name: Override the client level model name if needed
+            config: Optional configuration for folding parameters.
+        """
+        request = self._process_fold_all_atom_request(
+            all_atom_input, config, model_name if model_name is not None else self.model
+        )
+
+        try:
+            data = self._post("fold_all_atom", request)
+        except ESMProteinError as e:
+            return e
+
+        return self._process_fold_all_atom_response(data)
+
+    @staticmethod
+    def _process_fold_all_atom_request(
+        all_atom_input: StructurePredictionInput,
+        config: FoldingConfig,
+        model_name: str | None = None,
+    ) -> dict[str, Any]:
+        request: dict[str, Any] = {
+            "all_atom_input": serialize_structure_prediction_input(all_atom_input),
+            "model": model_name,
+        }
+
+        request["include_distogram"] = config.include_distogram
+        request["include_pae"] = config.include_pae
+        request["num_sampling_steps"] = config.num_sampling_steps
+        request["num_recycles"] = config.num_recycles
+        request["seed"] = config.seed
+        request["include_embeddings"] = config.include_embeddings
+
+        return request
+
+    @staticmethod
+    def _process_fold_all_atom_response(data: dict[str, Any]) -> MolecularComplexResult:
+        complex_data = data.get("complex")
+        molecular_complex = MolecularComplex.from_state_dict(complex_data)
+        return MolecularComplexResult(
+            complex=molecular_complex,
+            plddt=maybe_tensor(data.get("plddt"), convert_none_to_nan=True),
+            ptm=data.get("ptm", None),
+            pae=maybe_tensor(data.get("pae"), convert_none_to_nan=True),
+            iptm=data.get("interface_ptm", None),
+            output_embedding_sequence=maybe_tensor(
+                data.get("output_embedding_sequence"), convert_none_to_nan=True
+            ),
+            output_embedding_pair_pooled=maybe_tensor(
+                data.get("output_embedding_pair_pooled"), convert_none_to_nan=True
+            ),
+            residue_index=maybe_tensor(
+                data.get("residue_index"), convert_none_to_nan=True
+            ),
+            entity_id=maybe_tensor(data.get("entity_id"), convert_none_to_nan=True),
+            distogram=maybe_tensor(data.get("distogram"), convert_none_to_nan=True),
+        )
 
     @retry_decorator
     async def async_inverse_fold(
