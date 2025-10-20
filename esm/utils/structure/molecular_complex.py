@@ -707,8 +707,9 @@ class MolecularComplex:
         atom_array.chain_id = np.array(atom_chain_ids, dtype="U4")
         atom_array.res_name = np.array(atom_res_names, dtype="U4")
         atom_array.hetero = atom_hetero
-        atom_array.b_factor = atom_bfactors
         atom_array.atom_name = np.array(atom_names, dtype="U4")
+        atom_array.add_annotation("b_factor", dtype=float)
+        atom_array.b_factor = atom_bfactors
 
         # Use existing elements or infer them from atom names
         if self.atom_elements is not None and len(self.atom_elements) == n_atoms:

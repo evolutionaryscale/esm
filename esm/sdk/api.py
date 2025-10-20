@@ -335,7 +335,9 @@ class GenerationConfig:
 @define
 class InverseFoldingConfig:
     invalid_ids: Sequence[int] = []
-    temperature: float = 1.0
+    temperature: float = 0.1
+    seed: int | None = None
+    decode_in_residue_index_order: bool = False
 
 
 @define
