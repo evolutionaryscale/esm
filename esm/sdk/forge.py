@@ -119,6 +119,8 @@ class SequenceStructureForgeInferenceClient(_BaseForgeInferenceClient):
         inverse_folding_config = {
             "invalid_ids": config.invalid_ids,
             "temperature": config.temperature,
+            "seed": config.seed,
+            "decode_in_residue_index_order": config.decode_in_residue_index_order,
         }
         request = {
             "coordinates": maybe_list(coordinates, convert_nan_to_none=True),

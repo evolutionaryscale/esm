@@ -77,6 +77,7 @@ class ESMProtein(ProteinType):
                 sasa=protein_chain.sasa().tolist(),
                 function_annotations=None,
                 coordinates=torch.tensor(protein_chain.atom37_positions),
+                plddt=torch.tensor(protein_chain.confidence),
             )
         else:
             return ESMProtein(
@@ -85,6 +86,7 @@ class ESMProtein(ProteinType):
                 sasa=None,
                 function_annotations=None,
                 coordinates=torch.tensor(protein_chain.atom37_positions),
+                plddt=torch.tensor(protein_chain.confidence),
             )
 
     @classmethod
@@ -104,6 +106,7 @@ class ESMProtein(ProteinType):
             coordinates=torch.tensor(
                 protein_complex.atom37_positions, dtype=torch.float32
             ),
+            plddt=torch.tensor(protein_complex.confidence),
         )
 
     def to_pdb(self, pdb_path: PathOrBuffer) -> None:
@@ -325,7 +328,9 @@ class GenerationConfig:
 @define
 class InverseFoldingConfig:
     invalid_ids: Sequence[int] = []
-    temperature: float = 1.0
+    temperature: float = 0.1
+    seed: int | None = None
+    decode_in_residue_index_order: bool = False
 
 
 ## Low Level Endpoint Types

@@ -3,7 +3,11 @@ DOCKER_TAG ?= dev
 DOCKER_IMAGE_OSS=oss_pytests:${DOCKER_TAG}
 
 build-oss-ci:
-	docker build -f oss_pytests/Dockerfile oss_pytests -t $(DOCKER_IMAGE_OSS)
+	docker build \
+		--output=type=docker \
+		-f oss_pytests/Dockerfile \
+		-t $(DOCKER_IMAGE_OSS) \
+		oss_pytests
 
 start-docker-oss:
 	docker run \

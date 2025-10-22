@@ -562,7 +562,9 @@ class ProteinComplex:
 
     def infer_oxygen(self) -> ProteinComplex:
         """Oxygen position is fixed given N, CA, C atoms. Infer it if not provided."""
-        O_missing_indices = np.argwhere(np.isnan(self.atoms["O"]).any(axis=1)).squeeze()
+        O_missing_indices = np.argwhere(
+            ~np.isfinite(self.atoms["O"]).all(axis=1)
+        ).squeeze()
 
         O_vector = torch.tensor([0.6240, -1.0613, 0.0103], dtype=torch.float32)
         N, CA, C = torch.from_numpy(self.atoms[["N", "CA", "C"]]).float().unbind(dim=1)

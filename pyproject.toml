@@ -1,6 +1,6 @@
 [project]
 name = "esm"
-version = "3.2.3"
+version = "3.2.4.a0"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -24,7 +24,7 @@ dependencies = [
   "torch>=2.2.0",
   "torchvision",
   "torchtext",
-  "transformers<4.48.2",
+  "transformers==4.52.4",
   "ipython",
   "einops",
   "biotite>=1.0.0",
