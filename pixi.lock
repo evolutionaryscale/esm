@@ -1727,12 +1727,12 @@ packages:
 - pypi: ./
   name: esm
   version: 3.2.4a0
-  sha256: ef9ea6c382db370d0914aa4e9893c60d57a4a30c6a41307d7bb38f791ff8ecbd
+  sha256: aaf223456a7bbe86ef1885a0d14d5f6c1864bb8dc84b23d786948f95c6e53eae
   requires_dist:
   - torch>=2.2.0
   - torchvision
   - torchtext
-  - transformers==4.52.4
+  - transformers<4.53.0
   - ipython
   - einops
   - biotite>=1.0.0
