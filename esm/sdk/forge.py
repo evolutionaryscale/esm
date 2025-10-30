@@ -523,6 +523,7 @@ class ESM3ForgeInferenceClient(ESM3InferenceClient, _BaseForgeInferenceClient):
             sasa=maybe_tensor(data["outputs"]["sasa"]),
             function=maybe_tensor(data["outputs"]["function"]),
             residue_annotations=maybe_tensor(data["outputs"]["residue_annotation"]),
+            potential_sequence_of_concern=data["potential_sequence_of_concern"],
         )
 
     @staticmethod
@@ -1004,7 +1005,10 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
         except ESMProteinError as e:
             return e
 
-        return ESMProteinTensor(sequence=maybe_tensor(data["outputs"]["sequence"]))
+        return ESMProteinTensor(
+            sequence=maybe_tensor(data["outputs"]["sequence"]),
+            potential_sequence_of_concern=data["potential_sequence_of_concern"],
+        )
 
     @retry_decorator
     def encode(self, input: ESMProtein) -> ESMProteinTensor | ESMProteinError:
@@ -1018,7 +1022,10 @@ class ESMCForgeInferenceClient(ESMCInferenceClient, _BaseForgeInferenceClient):
         except ESMProteinError as e:
             return e
 
-        return ESMProteinTensor(sequence=maybe_tensor(data["outputs"]["sequence"]))
+        return ESMProteinTensor(
+            sequence=maybe_tensor(data["outputs"]["sequence"]),
+            potential_sequence_of_concern=data["potential_sequence_of_concern"],
+        )
 
     @retry_decorator
     async def async_decode(

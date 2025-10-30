@@ -1,6 +1,6 @@
 [project]
 name = "esm"
-version = "3.2.4.a0"
+version = "3.2.4.a1"
 description = "EvolutionaryScale open model repository"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
