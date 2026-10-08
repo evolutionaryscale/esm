@@ -341,39 +341,46 @@ class FusedLNLinearSwiGLUFunction(torch.autograd.Function):
     """
 
     @staticmethod
-    @torch.amp.custom_fwd(device_type="cuda", cast_inputs=torch.bfloat16)
     def forward(ctx, X, W12, LN_W, LN_B):
-        x_shape = X.shape
-        x_2d = X.contiguous().view(-1, x_shape[-1])
-        out, lin, mean, rstd = _lnlin_swiglu_fwd(x_2d, W12, LN_W, LN_B)
-        ctx.save_for_backward(x_2d, W12, LN_W, LN_B, mean, rstd, lin)
-        ctx.x_shape = x_shape
-        ctx.has_ln_bias = LN_B is not None
-        return out.view(*x_shape[:-1], out.shape[-1])
+        # Mirrors torch.amp.custom_fwd(cast_inputs=bfloat16), but device-derived
+        # instead of hardcoded to "cuda" so XPU autocast is respected too.
+        device_type = X.device.type
+        if torch.is_autocast_enabled(device_type):
+            X, W12, LN_W = X.bfloat16(), W12.bfloat16(), LN_W.bfloat16()
+            if LN_B is not None:
+                LN_B = LN_B.bfloat16()
+        with torch.amp.autocast(device_type, enabled=False):
+            x_shape = X.shape
+            x_2d = X.contiguous().view(-1, x_shape[-1])
+            out, lin, mean, rstd = _lnlin_swiglu_fwd(x_2d, W12, LN_W, LN_B)
+            ctx.save_for_backward(x_2d, W12, LN_W, LN_B, mean, rstd, lin)
+            ctx.x_shape = x_shape
+            ctx.has_ln_bias = LN_B is not None
+            return out.view(*x_shape[:-1], out.shape[-1])
 
     @staticmethod
-    @torch.amp.custom_bwd(device_type="cuda")
     def backward(ctx, dout):
         x_2d, W12, LN_W, LN_B, mean, rstd, lin = ctx.saved_tensors
-        dout_2d = dout.contiguous().view(-1, dout.shape[-1])
-        K = x_2d.shape[1]
+        with torch.amp.autocast(x_2d.device.type, enabled=False):
+            dout_2d = dout.contiguous().view(-1, dout.shape[-1])
+            K = x_2d.shape[1]
 
-        # SwiGLU backward, in-place into the saved `lin` buffer (no new alloc).
-        dlin = _swiglu_bwd_inplace(dout_2d, lin)
+            # SwiGLU backward, in-place into the saved `lin` buffer (no new alloc).
+            dlin = _swiglu_bwd_inplace(dout_2d, lin)
 
-        # LN+Linear backward via cuBLAS + ATen LN bwd.
-        # x_norm needed for dW12; recomputed via F.layer_norm (cuDNN, ~100 µs at d=256).
-        x_norm = F.layer_norm(x_2d, (K,), LN_W, LN_B, eps=1e-5)
-        dW12 = x_norm.transpose(0, 1) @ dlin  # [K, 2N]
-        dx_norm = dlin @ W12.transpose(0, 1)  # [M, K]
-        del x_norm
+            # LN+Linear backward via cuBLAS + ATen LN bwd.
+            # x_norm needed for dW12; recomputed via F.layer_norm (cuDNN, ~100 µs at d=256).
+            x_norm = F.layer_norm(x_2d, (K,), LN_W, LN_B, eps=1e-5)
+            dW12 = x_norm.transpose(0, 1) @ dlin  # [K, 2N]
+            dx_norm = dlin @ W12.transpose(0, 1)  # [M, K]
+            del x_norm
 
-        # native_layer_norm_backward output_mask = [need_dX, need_dGamma, need_dBeta].
-        # We always need dX and dGamma; dBeta only when LN bias was used.
-        output_mask = [True, True, ctx.has_ln_bias]
-        dX, dLN_W, dLN_B = torch.ops.aten.native_layer_norm_backward(
-            dx_norm, x_2d, [K], mean.float(), rstd.float(), LN_W, LN_B, output_mask
-        )
+            # native_layer_norm_backward output_mask = [need_dX, need_dGamma, need_dBeta].
+            # We always need dX and dGamma; dBeta only when LN bias was used.
+            output_mask = [True, True, ctx.has_ln_bias]
+            dX, dLN_W, dLN_B = torch.ops.aten.native_layer_norm_backward(
+                dx_norm, x_2d, [K], mean.float(), rstd.float(), LN_W, LN_B, output_mask
+            )
         # If LN_B was None (no bias), ATen returns dLN_B=None and we just pass it through.
         return dX.view(ctx.x_shape), dW12, dLN_W, dLN_B
 

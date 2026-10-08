@@ -2,11 +2,11 @@ import os
 
 import huggingface_hub
 import huggingface_hub.errors
-import torch
 
 from esm.models.esm3 import ESM3
 from esm.sdk import ESM3ForgeInferenceClient
 from esm.sdk.api import ESM3InferenceClient
+from esm.utils.device import resolve_default_device
 
 
 def get_local_client() -> ESM3InferenceClient:
@@ -14,7 +14,7 @@ def get_local_client() -> ESM3InferenceClient:
         huggingface_hub.whoami()
     except huggingface_hub.errors.LocalTokenNotFoundError:
         raise ValueError("Hugging Face token not found.")
-    return ESM3.from_pretrained(device=torch.device("cuda"))
+    return ESM3.from_pretrained(device=resolve_default_device())
 
 
 def get_forge_client(model_name: str) -> ESM3InferenceClient:

@@ -39,6 +39,7 @@ from esm.sdk.api import (
     LogitsOutput,
 )
 from esm.utils.constants.models import ESMC_6B, ESMC_300M, ESMC_600M
+from esm.utils.device import resolve_default_device, supports_amp_autocast
 from esm.utils.sampling import _BatchedESMProteinTensor
 
 _DEPRECATION_MESSAGE = (
@@ -160,7 +161,7 @@ class ESMC(nn.Module, ESMCInferenceClient):
         use_flash_attn: bool = True,
     ) -> "ESMC":
         if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = resolve_default_device()
         device = torch.device(device)
         model = EsmcForMaskedLM.from_pretrained(
             _legacy_name_to_repo(model_name),
@@ -304,7 +305,9 @@ class ESMC(nn.Module, ESMCInferenceClient):
         with (
             torch.no_grad(),
             torch.autocast(
-                device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"
+                device.type,
+                dtype=torch.bfloat16,
+                enabled=supports_amp_autocast(device.type),
             ),
         ):
             out = self(sequence_tokens=input.sequence)

@@ -7,6 +7,7 @@ fallback with matching parameter names so state dicts are interchangeable.
 """
 
 import math
+from functools import lru_cache
 
 import torch
 import torch.nn as nn
@@ -26,6 +27,23 @@ from esm.models.esmc.kernels import (
 )
 
 
+@lru_cache(maxsize=1)
+def _get_xpu_rotary_kernel():
+    """Triton RoPE kernel, or ``None`` if triton isn't installed.
+
+    Only the import is guarded: a real failure inside the kernel itself
+    (compile error, bad launch, ...) must still raise, not get treated as
+    "unavailable" and silently swapped for the reference path.
+    """
+    try:
+        from esm.models.esmc.xpu_rotary import apply_rotary_emb_xpu
+    except ModuleNotFoundError as exc:
+        if exc.name != "triton":
+            raise
+        return None
+    return apply_rotary_emb_xpu
+
+
 class EsmcRotaryEmbedding(nn.Module):
     """Rotary position embeddings (RoPE) as used by ESMC.
 
@@ -35,8 +53,8 @@ class EsmcRotaryEmbedding(nn.Module):
     * The ``inv_freq`` buffer is recomputed on every device move and kept in
       fp32 even when the module is cast to bf16/fp16. CPU and CUDA ``pow``
       differ by ~1 fp32 ULP, which compounds across the deep attention stack.
-    * The ``forward`` selects the Flash-Attention Triton RoPE kernel when it is
-      available and the tensors live on CUDA, otherwise the pure-PyTorch path.
+    * CUDA uses Flash-Attention Triton RoPE when available. XPU fp32 inference
+      uses a separate Triton kernel; other calls use the pure-PyTorch path.
 
     Parameters
     ----------
@@ -187,6 +205,17 @@ class EsmcRotaryEmbedding(nn.Module):
             assert apply_triton_rotary is not None
             q_rot = apply_triton_rotary(q, cos, sin, interleaved=self.interleaved)
             k_rot = apply_triton_rotary(k, cos, sin, interleaved=self.interleaved)
+        elif (
+            q.device.type == "xpu"
+            and q.dtype == torch.float32
+            and k.device.type == "xpu"
+            and k.dtype == torch.float32
+            and not self.interleaved
+            and not torch.is_grad_enabled()
+            and (apply_xpu_rotary := _get_xpu_rotary_kernel()) is not None
+        ):
+            q_rot = apply_xpu_rotary(q, cos, sin)
+            k_rot = apply_xpu_rotary(k, cos, sin)
         else:
             q_rot = apply_rotary_emb_torch(q, cos, sin, self.interleaved)
             k_rot = apply_rotary_emb_torch(k, cos, sin, self.interleaved)

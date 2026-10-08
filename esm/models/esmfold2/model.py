@@ -59,6 +59,7 @@ from esm.models.esmfold2.layers import (
     maybe_subsample_msa,
 )
 from esm.models.hub import HubPreTrainedModel, resolve_model_dir
+from esm.utils.device import empty_cache, supports_amp_autocast
 
 _EPS = 1e-6
 
@@ -224,7 +225,11 @@ class ConfidenceHead(nn.Module):
         # FoldingTrunk handles the bf16 cast internally during inference so
         # each block's fused trimul engages. In-place residual avoids an
         # extra fp32 pair allocation.
-        with torch.amp.autocast("cuda", enabled=pair.is_cuda, dtype=torch.bfloat16):
+        with torch.amp.autocast(
+            pair.device.type,
+            enabled=supports_amp_autocast(pair.device.type),
+            dtype=torch.bfloat16,
+        ):
             pair_delta = self.folding_trunk(pair, pair_attention_mask=pair_mask)
         pair.add_(pair_delta.float())
         del pair_delta
@@ -518,13 +523,17 @@ def _convert_te_modules_to_fp8_inplace(module: nn.Module) -> None:
 
 
 @contextmanager
-def _lm_precision_context(fp8: bool):
+def _lm_precision_context(fp8: bool, device_type: str):
     """bf16 autocast (+ optional TE fp8 autocast) around the LM forward.
 
     te.autocast keeps te.Linear outputs bf16 instead of the fp32 default
     (~425 MB at L=1024 in the hidden-state cache).
     """
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with torch.autocast(
+        device_type=device_type,
+        dtype=torch.bfloat16,
+        enabled=supports_amp_autocast(device_type),
+    ):
         if fp8 and TE_AVAILABLE:
             fp8_recipe = DelayedScaling(
                 fp8_format=Format.HYBRID,
@@ -863,7 +872,7 @@ class EsmFold2Model(HubPreTrainedModel):
             self.esmc.to(self.device)
         # fp8 TE kernels require prod(shape[:-1]) % 8 == 0.
         pad_to = 8 if self._esmc_fp8 else None
-        with _lm_precision_context(self._esmc_fp8):
+        with _lm_precision_context(self._esmc_fp8, device_type=self.device.type):
             return compute_lm_hidden_states(
                 self.esmc,
                 input_ids,
@@ -1110,8 +1119,9 @@ class EsmFold2Model(HubPreTrainedModel):
         ).unsqueeze(-1)
         atom_to_token = atom_to_token * atm_mask.long()
 
-        use_amp = ref_pos.device.type == "cuda"
-        with torch.amp.autocast("cuda", enabled=use_amp, dtype=torch.bfloat16):
+        device_type = ref_pos.device.type
+        use_amp = supports_amp_autocast(device_type)
+        with torch.amp.autocast(device_type, enabled=use_amp, dtype=torch.bfloat16):
             x_inputs = self.inputs_embedder(
                 aatype=res_type_oh,
                 profile=profile.float(),
@@ -1203,7 +1213,7 @@ class EsmFold2Model(HubPreTrainedModel):
             # the diffusion rigid-align SVD — can succeed near the OOM boundary.
             if self._offload_esmc and self.esmc is not None:
                 self.esmc.to("cpu")
-                torch.cuda.empty_cache()
+                empty_cache(self.device.type)
 
             # Pair attention mask: sharded block under CP (outer product of the
             # sliced row/col token-mask — never the full L×L), else the serial

@@ -71,11 +71,12 @@ addopts = """
   --cov=esm
 	--cov-report term-missing:skip-covered
 	-n auto
-	-m 'not gpu and not manual and not merge_only'
+	-m 'not gpu and not xpu and not manual and not merge_only'
 	--ignore=tests/oss_pytests/test_oss_client.py
 """
 markers = [
   "gpu: requires a CUDA device; run in the monorepo's gpu-ci",
+  "xpu: requires an Intel GPU (XPU) device; run manually on XPU hardware",
   "manual: too heavy for a hosted runner; run in the monorepo's research-ci",
   "merge_only: needs a real published checkpoint; run in the monorepo's research-ci",
 ]
@@ -158,13 +159,30 @@ xformers = { url = "https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-
 cuequivariance-torch = ">=0.8.1"
 cuequivariance-ops-torch-cu13 = ">=0.8.1"
 
+# Intel GPU (XPU). No flash-attn/xformers/transformer_engine/cuequivariance
+# on XPU upstream; ESMC/ESMFold2 fall back to their reference path plus the
+# Triton "fused" backend, which does run on XPU.
+[tool.pixi.feature.xpu]
+platforms = ["linux-64"]
+
+[tool.pixi.feature.xpu.pypi-dependencies]
+torch = { version = "*", index = "https://download.pytorch.org/whl/xpu" }
+# torch's XPU wheel depends on this exact package name (not the older
+# `pytorch-triton-xpu`), only published on the xpu index.
+triton-xpu = { version = "*", index = "https://download.pytorch.org/whl/xpu" }
+
 # `gpu` stays on 3.12: the prebuilt flash_attn wheel in `fused` is cp312-only.
+# `xpu` environments get their own solve-groups since they pin a different
+# torch wheel index than `default`.
 [tool.pixi.environments]
 default = {features = ["py312"], solve-group = "default"}
 dev = {features = ["dev", "py312"], solve-group = "default"}
 gpu = {features = ["dev", "fused", "py312"], solve-group = "default"}
 dev-py313 = {features = ["dev", "py313"], solve-group = "py313"}
 dev-py314 = {features = ["dev", "py314"], solve-group = "py314"}
+xpu = {features = ["dev", "xpu", "py312"], solve-group = "xpu"}
+xpu-py313 = {features = ["dev", "xpu", "py313"], solve-group = "xpu-py313"}
+xpu-py314 = {features = ["dev", "xpu", "py314"], solve-group = "xpu-py314"}
 
 [tool.ruff]
 extend-include = ["*.ipynb"]

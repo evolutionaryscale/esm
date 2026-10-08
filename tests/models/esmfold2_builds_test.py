@@ -41,6 +41,8 @@ import torch
 
 from esm.models.esmfold2 import EsmFold2Config, EsmFold2ExperimentalModel, EsmFold2Model
 from esm.models.esmfold2 import layers as _layers
+from esm.models.esmfold2 import model as _model
+from esm.models.esmfold2 import processor as _processor
 from tests.conftest import ESMFOLD2_LENGTHS, ESMFOLD2_SEQUENCES, esmfold2_inputs
 
 #: Chunk sizes the matrix sweeps. ``None`` disables chunking entirely.
@@ -302,6 +304,118 @@ def test_set_kernel_backend_reaches_every_module(
     assert after == expected, f"appeared unconfigured: {sorted(after - expected)}"
 
 
+@pytest.mark.parametrize("n_queries", [3, 751])
+def test_cuequivariance_pair_bias_rejects_non_cuda_device(monkeypatch, n_queries):
+    """cuequivariance is CUDA-only; a host that merely *has* CUDA elsewhere
+    (e.g. a CPU/XPU tensor on a CUDA+XPU machine) must not silently run the
+    reference path or crash inside the cueq library - it should refuse
+    clearly, because the user explicitly asked for this backend.
+    """
+    monkeypatch.setattr(_layers, "CUE_AVAILABLE", True)
+    attn = _layers.AttentionPairBias(
+        d_model=8, d_pair=4, num_heads=2, use_conditioning=False
+    )
+    attn.set_kernel_backend("cuequivariance")
+    a = torch.randn(1, n_queries, 8)
+    z = torch.randn(1, n_queries, n_queries, 4)
+    with pytest.raises(RuntimeError, match="cuequivariance.*CUDA-only"):
+        attn(a, None, z)
+
+
+def test_cuequivariance_tri_mul_rejects_non_cuda_device(monkeypatch):
+    """Same refusal for the triangle-multiplicative cueq path."""
+    monkeypatch.setattr(_layers, "CUE_AVAILABLE", True)
+    tri_mul = _layers.TriangleMultiplicativeUpdate(dim=4)
+    tri_mul.set_kernel_backend("cuequivariance")
+    pair = torch.randn(1, 3, 3, 4)
+    with pytest.raises(RuntimeError, match="cuequivariance.*CUDA-only"):
+        tri_mul(pair)
+
+
+@pytest.mark.xpu
+@pytest.mark.parametrize("cue_available", [False, True])
+def test_rejected_cuequivariance_selection_keeps_xpu_reference_usable(
+    monkeypatch, cue_available
+):
+    monkeypatch.setattr(_layers, "CUE_AVAILABLE", cue_available)
+    tri_mul = _layers.TriangleMultiplicativeUpdate(dim=4).to("xpu")
+    pair = torch.randn(1, 3, 3, 4, device="xpu")
+    previous_backend = tri_mul._engine._use_kernels
+
+    with pytest.raises(RuntimeError, match="cuequivariance.*CUDA-only"):
+        tri_mul.set_kernel_backend("cuequivariance")
+
+    assert tri_mul._engine._use_kernels is previous_backend
+    assert torch.isfinite(tri_mul(pair)).all()
+
+
+def test_cpu_lm_precision_context_does_not_autocast():
+    with _model._lm_precision_context(fp8=False, device_type="cpu"):
+        assert not torch.is_autocast_enabled("cpu")
+
+
+@pytest.mark.parametrize("module", [_layers, _processor])
+def test_seed_context_restores_only_requested_accelerator(monkeypatch, module):
+    calls: list[tuple[str, str]] = []
+    state = [torch.tensor([42], dtype=torch.uint8)]
+    monkeypatch.setattr(
+        module, "get_rng_state_all", lambda kind: calls.append(("get", kind)) or state
+    )
+    monkeypatch.setattr(
+        module, "manual_seed_all", lambda kind, seed: calls.append(("seed", kind))
+    )
+    monkeypatch.setattr(
+        module, "set_rng_state_all", lambda kind, states: calls.append(("set", kind))
+    )
+    monkeypatch.setattr(
+        torch,
+        "manual_seed",
+        lambda seed: pytest.fail("torch.manual_seed seeds every accelerator"),
+    )
+    cpu_state = torch.get_rng_state()
+    with module._seed_context(123, device_type="xpu"):
+        torch.rand(1)
+    assert torch.equal(torch.get_rng_state(), cpu_state)
+    assert calls == [("get", "xpu"), ("seed", "xpu"), ("set", "xpu")]
+
+
+def test_input_builder_seeds_requested_device(monkeypatch):
+    builder = object.__new__(_processor.ESMFold2InputBuilder)
+    monkeypatch.setattr(_processor, "clean_esmfold2_input", lambda input: input)
+    monkeypatch.setattr(
+        _processor, "prepare_esmfold2_input", lambda input, seed: ({}, [])
+    )
+    requested: list[tuple[int, str]] = []
+
+    @contextlib.contextmanager
+    def record_seed_context(seed, *, device_type):
+        requested.append((seed, device_type))
+        yield
+
+    monkeypatch.setattr(_processor, "_seed_context", record_seed_context)
+    assert builder.prepare_input(input=None, seed=123, device="xpu") == ({}, [])
+    assert requested == [(123, "xpu")]
+
+
+@pytest.mark.xpu
+@pytest.mark.parametrize("module", [_layers, _processor])
+def test_seed_context_restores_xpu_rng(module):
+    before = torch.xpu.get_rng_state_all()
+    try:
+        with module._seed_context(123, device_type="xpu"):
+            first = torch.rand(3, device="xpu")
+        with module._seed_context(123, device_type="xpu"):
+            assert torch.equal(torch.rand(3, device="xpu"), first)
+        assert all(
+            torch.equal(saved, current)
+            for saved, current in zip(
+                before, torch.xpu.get_rng_state_all(), strict=True
+            )
+        )
+    finally:
+        torch.xpu.set_rng_state_all(before)
+
+
 #: Also found by this test: ``EsmFold2ExperimentalModel.set_chunk_size`` fans
 #: out to ``folding_trunk`` and ``confidence_head`` only, so an enabled
 #: ``msa_encoder`` keeps its construction-time chunk size. The release model
@@ -436,7 +550,7 @@ def test_cuda_autocast_is_a_no_op_off_cuda(tiny_esmfold2):
 
 
 def test_use_amp_is_off_for_cpu_inputs(tiny_esmfold2):
-    """``use_amp = ref_pos.device.type == "cuda"``, observed rather than read.
+    """``use_amp = supports_amp_autocast(device_type)``, observed rather than read.
 
     The single device-conditional switch in ``forward``. Asserted where it takes
     effect - inside the autocast block, at the first module the block wraps -
@@ -615,9 +729,19 @@ def test_cpu_and_gpu_agree(kernel_esmfold2_config, cpu_fp32_result):
     assert_close_to_reference(result, cpu_fp32_result, GPU_TOLERANCE, "cpu-vs-gpu")
 
 
+@pytest.mark.xpu
+def test_cpu_and_xpu_agree(kernel_esmfold2_config, cpu_fp32_result):
+    """E1 on Intel XPU. Same reasoning as ``test_cpu_and_gpu_agree``."""
+    model = build_model(kernel_esmfold2_config, device="xpu")
+    assert next(model.parameters()).device.type == "xpu"
+    result = run_forward(model, ESMFOLD2_SEQUENCES[MATRIX_LENGTH], flash=False)
+
+    assert_close_to_reference(result, cpu_fp32_result, GPU_TOLERANCE, "cpu-vs-xpu")
+
+
 @pytest.mark.gpu
 def test_use_amp_is_on_for_cuda_inputs(tiny_esmfold2_config):
-    """The other half of ``use_amp = ref_pos.device.type == "cuda"``.
+    """The other half of ``use_amp = supports_amp_autocast(device_type)``.
 
     Pinned as an expectation because it is *why* the CPU/GPU tolerances below
     are bf16-sized rather than fp32-sized: there is no supported way to run the
@@ -627,6 +751,22 @@ def test_use_amp_is_on_for_cuda_inputs(tiny_esmfold2_config):
     seen: list[bool] = []
     handle = model.inputs_embedder.register_forward_pre_hook(
         lambda module, args: seen.append(torch.is_autocast_enabled("cuda"))
+    )
+    try:
+        run_forward(model, ESMFOLD2_SEQUENCES["tiny"], flash=False)
+    finally:
+        handle.remove()
+
+    assert seen and all(seen)
+
+
+@pytest.mark.xpu
+def test_use_amp_is_on_for_xpu_inputs(tiny_esmfold2_config):
+    """The XPU half of ``use_amp = supports_amp_autocast(device_type)``."""
+    model = build_model(tiny_esmfold2_config, device="xpu")
+    seen: list[bool] = []
+    handle = model.inputs_embedder.register_forward_pre_hook(
+        lambda module, args: seen.append(torch.is_autocast_enabled("xpu"))
     )
     try:
         run_forward(model, ESMFOLD2_SEQUENCES["tiny"], flash=False)
@@ -672,6 +812,31 @@ def test_every_gpu_build_reaches_the_cpu_reference(
         assert not flash_calls
 
     label = f"{backend}/flash={flash}/chunk={chunk_size}"
+    assert_close_to_reference(result, cpu_fp32_result, GPU_TOLERANCE, label)
+
+
+# XPU has no flash-attn and no cuequivariance build, so the matrix is just
+# backend x chunk size. Measured deltas were the same order as GPU_BUILDS
+# (9.4e-3 to 9.6e-3 vs 9.96e-3 to 1.01e-2), so it reuses GPU_TOLERANCE.
+XPU_BUILDS = [(None, None), (None, 64), ("fused", None), ("fused", 64)]
+
+
+@pytest.mark.xpu
+@pytest.mark.parametrize("backend,chunk_size", XPU_BUILDS)
+def test_every_xpu_build_reaches_the_cpu_reference(
+    kernel_esmfold2_config, cpu_fp32_result, backend, chunk_size
+):
+    """E2 on Intel XPU. Same reasoning as the CUDA version above."""
+    skip_if_backend_missing(backend)
+    model = build_model(kernel_esmfold2_config, device="xpu")
+    model.set_kernel_backend(backend)
+    model.set_chunk_size(chunk_size)
+
+    assert_backend_dispatched(model, backend)
+    assert_chunking_dispatched(model, chunk_size)
+
+    result = run_forward(model, ESMFOLD2_SEQUENCES[MATRIX_LENGTH], flash=False)
+    label = f"{backend}/chunk={chunk_size}"
     assert_close_to_reference(result, cpu_fp32_result, GPU_TOLERANCE, label)
 
 

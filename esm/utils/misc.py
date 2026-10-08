@@ -280,7 +280,7 @@ def fp32_autocast_context(device_type: str) -> ContextManager[Any]:
     elif device_type == "mps":
         # For MPS, just return a no-op context manager (nullcontext) since MPS does not support autocast.
         return nullcontext()
-    elif device_type == "cuda":
+    elif device_type in ("cuda", "xpu"):
         return torch.amp.autocast(device_type, dtype=torch.float32)
     else:
         raise ValueError(f"Unsupported device type: {device_type}")

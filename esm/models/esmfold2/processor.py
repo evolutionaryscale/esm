@@ -16,31 +16,31 @@ from esm.models.esmfold2.types import (
     ProteinInput,
     StructurePredictionInput,
 )
+from esm.utils.device import get_rng_state_all, manual_seed_all, set_rng_state_all
 from esm.utils.structure.molecular_complex import MolecularComplexResult
 
 
 @contextmanager
-def _seed_context(seed: int | None):
+def _seed_context(seed: int | None, *, device_type: str):
     if seed is None:
         yield
         return
     py_state = random.getstate()
     np_state = np.random.get_state()
     torch_state = torch.random.get_rng_state()
-    cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    accelerator_states = get_rng_state_all(device_type)
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    torch.random.default_generator.manual_seed(seed)
+    manual_seed_all(device_type, seed)
     try:
         yield
     finally:
         random.setstate(py_state)
         np.random.set_state(np_state)
         torch.random.set_rng_state(torch_state)
-        if cuda_state is not None:
-            torch.cuda.set_rng_state_all(cuda_state)
+        if accelerator_states is not None:
+            set_rng_state_all(device_type, accelerator_states)
 
 
 @contextmanager
@@ -214,7 +214,14 @@ class ESMFold2InputBuilder:
             Batched input tensors and chain metadata for output processing.
         """
         structure_prediction_input = clean_esmfold2_input(input)
-        with _seed_context(seed) if seed is not None else nullcontext():
+        with (
+            _seed_context(
+                seed,
+                device_type=torch.device(device).type if device is not None else "cpu",
+            )
+            if seed is not None
+            else nullcontext()
+        ):
             features, chain_infos = prepare_esmfold2_input(
                 structure_prediction_input, seed=seed
             )
@@ -424,7 +431,11 @@ class ESMFold2InputBuilder:
             sampler_kwargs["lm_mask_pct"] = lm_mask_pct
 
         with torch.no_grad():
-            with _seed_context(seed) if seed is not None else nullcontext():
+            with (
+                _seed_context(seed, device_type=model.device.type)
+                if seed is not None
+                else nullcontext()
+            ):
                 with _lm_dropout_context(model, lm_dropout):
                     output = model(
                         **features,

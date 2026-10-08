@@ -280,6 +280,7 @@ def compute_lddt_ca(
 # NOTE(roshan): no_grad required for stack_variable_length_tensors apparently... let's revisit if we want to backprop
 @torch.no_grad()
 @autocast("cuda", enabled=False)
+@autocast("xpu", enabled=False)
 def compute_rmsd(
     mobile: torch.Tensor,
     target: torch.Tensor,

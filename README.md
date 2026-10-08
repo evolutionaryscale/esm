@@ -268,6 +268,11 @@ with open("1mht_pred.cif", "w") as f:
 
 > **AMD ROCm users:** use ROCm 6.4 with PyTorch 2.9 or newer.
 
+> **Intel GPU (XPU) users:** pass `device="xpu"` instead of `"cuda"`. `pixi run -e xpu ...`
+> gives a working environment. The vendored Triton kernels run on XPU; libraries
+> with no XPU build (Transformer Engine, cuequivariance, flash-attn) fall back to
+> the reference PyTorch path automatically.
+
 ### Running ESMFold2 Through the Biohub Platform
 
 Install the `esm` Python package

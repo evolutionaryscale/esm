@@ -3,7 +3,7 @@
 Structural tests run on CPU against a tiny randomly-initialised model with
 synthetic LM states, so no 6B PLM backbone is needed. Published-weight tests use
 biohub/ESMFold2 and skip when the Hub is unreachable. GPU tests are marked
-``gpu``.
+``gpu``, XPU tests ``xpu``.
 """
 
 import json
@@ -1175,9 +1175,16 @@ def test_loads_from_hub_with_full_key_coverage(repo, expected):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.gpu
-@pytest.mark.parametrize("backend", ["fused", "cuequivariance"])
-def test_kernel_backends_agree(kernel_esmfold2_config, backend):
+KERNEL_BACKEND_CASES = [
+    pytest.param("cuda", "fused", marks=pytest.mark.gpu),
+    pytest.param("cuda", "cuequivariance", marks=pytest.mark.gpu),
+    # cuequivariance has no XPU build; fused (Triton) is the only backend there.
+    pytest.param("xpu", "fused", marks=pytest.mark.xpu),
+]
+
+
+@pytest.mark.parametrize("device,backend", KERNEL_BACKEND_CASES)
+def test_kernel_backends_agree(kernel_esmfold2_config, device, backend):
     """Whatever accelerators a user has installed, the answer must match.
 
     Compared on the final coordinates and pLDDT rather than intermediate
@@ -1196,12 +1203,12 @@ def test_kernel_backends_agree(kernel_esmfold2_config, backend):
         pytest.skip("cuequivariance unavailable")  # ty:ignore[too-many-positional-arguments]
 
     torch.manual_seed(0)
-    model = EsmFold2Model(kernel_esmfold2_config).eval().cuda()
+    model = EsmFold2Model(kernel_esmfold2_config).eval().to(device)
     model.set_chunk_size(None)
 
     features, lm_hidden_states = esmfold2_inputs(model)
-    features = {k: v.cuda() for k, v in features.items()}
-    lm_hidden_states = lm_hidden_states.cuda()
+    features = {k: v.to(device) for k, v in features.items()}
+    lm_hidden_states = lm_hidden_states.to(device)
 
     def run():
         # The sampler draws fresh noise per call; reseed for a fair comparison.
@@ -1233,6 +1240,9 @@ def test_kernel_backends_agree(kernel_esmfold2_config, backend):
     # amplifies it. It matches the 25x-of-floor headroom esmfold2_builds_test
     # uses for the same comparison, which survives that runner. A wrong kernel
     # misses by orders of magnitude, so the check keeps its teeth.
+    #
+    # xpu/fused measured 2.3e-3, well inside this bound, so it reuses the same
+    # tolerances rather than a separate table.
     torch.testing.assert_close(
         candidate["sample_atom_coords"].float(),
         reference["sample_atom_coords"].float(),

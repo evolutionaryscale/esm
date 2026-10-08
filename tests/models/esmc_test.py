@@ -2,9 +2,10 @@
 
 Structural tests run on CPU against tiny randomly-initialised models. Tests that
 need published weights use ESMC-300M and skip when the Hub is unreachable. GPU
-tests are marked ``gpu``.
+tests are marked ``gpu``, XPU tests ``xpu``.
 """
 
+import builtins
 import functools
 import gzip
 import json
@@ -20,6 +21,7 @@ import torch
 import torch.nn as nn
 from safetensors.torch import save_file
 
+from esm.layers.rotary import apply_rotary_emb_torch
 from esm.models.esmc import (
     ESMC,
     EsmcConfig,
@@ -30,6 +32,7 @@ from esm.models.esmc import (
     EsmcOutput,
     EsmcTokenizer,
 )
+from esm.models.esmc import layers as layers_module
 from esm.models.esmc import model as model_module
 from esm.models.esmc.checkpoint_layout import native_to_published, published_to_native
 from esm.models.esmc.kernels import FLASH_ATTN_INSTALLED, TE_INSTALLED
@@ -1328,6 +1331,130 @@ def test_cpu_and_gpu_agree(esmc_300m_dir, esmc_tokenizer):
         torch.testing.assert_close(actual, expected, atol=3e-3, rtol=1e-4)
 
 
+@pytest.mark.xpu
+def test_cpu_and_xpu_agree(esmc_300m_dir, esmc_tokenizer):
+    """Same weights, same input, both devices, fp32 on each side.
+
+    XPU uses its Triton RoPE kernel for inference; the CPU side is the
+    reference implementation.
+    """
+    on_cpu = EsmcModel.from_pretrained(esmc_300m_dir, device="cpu")
+    on_xpu = EsmcModel.from_pretrained(esmc_300m_dir, device="xpu")
+
+    for sequence in SEQUENCES.values():
+        enc = esmc_tokenizer(sequence, return_tensors="pt")
+        with torch.no_grad():
+            expected = on_cpu(**enc).last_hidden_state.float()
+            actual = on_xpu(**{k: v.to("xpu") for k, v in enc.items()})
+            actual = actual.last_hidden_state.float().cpu()
+
+        # The original tight reference tolerance also holds with fused XPU RoPE.
+        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.xpu
+def test_xpu_rotary_triton_matches_torch_reference(monkeypatch):
+    rotary = EsmcRotaryEmbedding(dim=16).to("xpu").eval()
+    q_storage = torch.randn((2, 13, 3, 32), device="xpu", dtype=torch.float32)
+    q = q_storage[..., ::2]
+    k = torch.randn_like(q)
+
+    get_kernel = layers_module._get_xpu_rotary_kernel
+    kernel_lookups = 0
+
+    def counted_get_kernel():
+        nonlocal kernel_lookups
+        kernel_lookups += 1
+        return get_kernel()
+
+    monkeypatch.setattr(layers_module, "_get_xpu_rotary_kernel", counted_get_kernel)
+    with torch.inference_mode():
+        actual_q, actual_k = rotary(q, k)
+        assert rotary._cos_cached is not None and rotary._sin_cached is not None
+        expected_q = apply_rotary_emb_torch(q, rotary._cos_cached, rotary._sin_cached)
+        expected_k = apply_rotary_emb_torch(k, rotary._cos_cached, rotary._sin_cached)
+
+    assert kernel_lookups == 1
+    torch.testing.assert_close(actual_q, expected_q, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(actual_k, expected_k, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.xpu
+@pytest.mark.parametrize(
+    ("dtype", "requires_grad"), [(torch.float32, True), (torch.bfloat16, False)]
+)
+def test_xpu_rotary_keeps_reference_for_grad_or_non_fp32(
+    monkeypatch, dtype, requires_grad
+):
+    def unexpected_kernel():
+        raise AssertionError("unsupported RoPE configuration selected Triton")
+
+    monkeypatch.setattr(layers_module, "_get_xpu_rotary_kernel", unexpected_kernel)
+    rotary = EsmcRotaryEmbedding(dim=16).to(device="xpu", dtype=dtype).eval()
+    q = torch.randn(
+        (2, 13, 3, 16), device="xpu", dtype=dtype, requires_grad=requires_grad
+    )
+    k = torch.randn_like(q, requires_grad=requires_grad)
+
+    if requires_grad:
+        actual_q, actual_k = rotary(q, k)
+        (actual_q.sum() + actual_k.sum()).backward()
+        assert q.grad is not None and k.grad is not None
+    else:
+        with torch.inference_mode():
+            actual_q, actual_k = rotary(q, k)
+            assert rotary._cos_cached is not None and rotary._sin_cached is not None
+            expected_q = apply_rotary_emb_torch(
+                q, rotary._cos_cached, rotary._sin_cached
+            )
+            expected_k = apply_rotary_emb_torch(
+                k, rotary._cos_cached, rotary._sin_cached
+            )
+        assert torch.equal(actual_q, expected_q)
+        assert torch.equal(actual_k, expected_k)
+
+
+@pytest.mark.xpu
+def test_xpu_rotary_falls_back_when_triton_is_missing(monkeypatch):
+    """Triton is an optional dependency (the ``fused`` extra). Without it,
+    fp32 XPU inference should use the reference path, not crash."""
+    monkeypatch.setattr(layers_module, "_get_xpu_rotary_kernel", lambda: None)
+    rotary = EsmcRotaryEmbedding(dim=16).to("xpu").eval()
+    q = torch.randn((2, 13, 3, 16), device="xpu", dtype=torch.float32)
+    k = torch.randn_like(q)
+
+    with torch.inference_mode():
+        actual_q, actual_k = rotary(q, k)
+        assert rotary._cos_cached is not None and rotary._sin_cached is not None
+        expected_q = apply_rotary_emb_torch(q, rotary._cos_cached, rotary._sin_cached)
+        expected_k = apply_rotary_emb_torch(k, rotary._cos_cached, rotary._sin_cached)
+    torch.testing.assert_close(actual_q, expected_q, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(actual_k, expected_k, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize("missing_module", ["triton", "triton.language"])
+def test_xpu_rotary_import_only_ignores_missing_triton(monkeypatch, missing_module):
+    original_import = builtins.__import__
+
+    def failing_import(name, *args, **kwargs):
+        if name == "esm.models.esmc.xpu_rotary":
+            raise ModuleNotFoundError(
+                f"No module named {missing_module!r}", name=missing_module
+            )
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing_import)
+    layers_module._get_xpu_rotary_kernel.cache_clear()
+    try:
+        if missing_module == "triton":
+            assert layers_module._get_xpu_rotary_kernel() is None
+        else:
+            with pytest.raises(ModuleNotFoundError, match="triton.language"):
+                layers_module._get_xpu_rotary_kernel()
+    finally:
+        layers_module._get_xpu_rotary_kernel.cache_clear()
+
+
 # Every build reachable on a GPU: dtype x attention backend x fused/reference
 # layers. flash_attention_2 is only paired with fp16 / bf16 because the kernel
 # rejects fp32, and only with the fused layers because a CPU-built model never
@@ -1402,6 +1529,66 @@ def test_every_gpu_build_reaches_the_reference(
             out.last_hidden_state.float()[0].norm(dim=-1).cpu(),
             torch.tensor(case["last_hidden_state_norms"]),
             atol=REFERENCE_NORM_TOLERANCE[dtype],
+            rtol=0,
+            msg=lambda text: f"{name}: {text}",
+        )
+
+
+# XPU has no flash-attn / Transformer Engine, so every build degenerates to
+# the reference layers regardless of the requested `layers`; sdpa and eager
+# are the only attention backends.
+XPU_BUILDS = [
+    (torch.float32, "sdpa"),
+    (torch.float32, "eager"),
+    (torch.bfloat16, "sdpa"),
+    (torch.bfloat16, "eager"),
+    (torch.float16, "sdpa"),
+    (torch.float16, "eager"),
+]
+
+# Pre-fusion maxima across every build and length in XPU_BUILDS:
+#              max|Δ| norms   argmax mismatches (of 12 / 131 / 412)
+#   fp32       2.6e-6         0 / 0 / 0
+#   bf16       1.34e-2        0 / 2 / 1
+#   fp16       1.45e-3        0 / 1 / 0
+# XPU has no Transformer Engine; fp32 inference now uses fused Triton RoPE.
+# These bounds are against fixed CPU references and still pass for that path.
+REFERENCE_NORM_TOLERANCE_XPU = {
+    torch.float32: 1e-5,
+    torch.bfloat16: 0.02,
+    torch.float16: 3e-3,
+}
+REFERENCE_ARGMAX_MISMATCHES_XPU = {
+    torch.float32: 0,
+    torch.bfloat16: 3,
+    torch.float16: 2,
+}
+
+
+@pytest.mark.xpu
+@pytest.mark.parametrize("dtype,attn", XPU_BUILDS)
+def test_every_xpu_build_reaches_the_reference(
+    esmc_300m_dir, esmc_tokenizer, dtype, attn
+):
+    """Correct, not merely self-consistent: every XPU build vs the CPU reference."""
+    model = build_esmc(
+        esmc_300m_dir, device="xpu", dtype=dtype, attn=attn, model_class=EsmcForMaskedLM
+    )
+
+    for name, sequence in SEQUENCES.items():
+        case = reference_values()["cases"][name]
+        enc = {
+            k: v.to("xpu")
+            for k, v in esmc_tokenizer(sequence, return_tensors="pt").items()
+        }
+        with torch.no_grad():
+            out = model(**enc)
+        mismatches = argmax_mismatches(out.logits, case["argmax"])
+        assert mismatches <= REFERENCE_ARGMAX_MISMATCHES_XPU[dtype], (name, mismatches)
+        torch.testing.assert_close(
+            out.last_hidden_state.float()[0].norm(dim=-1).cpu(),
+            torch.tensor(case["last_hidden_state_norms"]),
+            atol=REFERENCE_NORM_TOLERANCE_XPU[dtype],
             rtol=0,
             msg=lambda text: f"{name}: {text}",
         )

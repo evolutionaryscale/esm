@@ -28,6 +28,7 @@ from esm.models.esmc.kernels import (
 from esm.models.esmc.layers import EsmcRotaryEmbedding, EsmcTransformerStack
 from esm.models.esmc.sae import EsmcSaeLayer
 from esm.models.hub import HubPreTrainedModel, resolve_model_dir
+from esm.utils.device import resolve_default_device
 
 _SAFETENSORS_INDEX = "model.safetensors.index.json"
 _SAFETENSORS_SINGLE = "model.safetensors"
@@ -253,7 +254,7 @@ class EsmcPreTrainedModel(HubPreTrainedModel):
         if attn_implementation is not None:
             config.attn_implementation = attn_implementation
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = resolve_default_device()
         # Sets the default device the encoder reads to choose its kernels.
         with torch.device(device):
             return cls._load_pretrained(local_dir, config, device=device, dtype=dtype)
@@ -284,12 +285,12 @@ class EsmcModel(EsmcPreTrainedModel):
 
     def __init__(self, config: EsmcConfig):
         super().__init__(config)
-        # Every fused kernel is CUDA-only, so all of them hang off one condition:
-        # the device this model's parameters are being created on. Deriving them
-        # separately is what let the LayerNorm and attention gates disagree.
-        on_cuda = torch.get_default_device().type == "cuda"
+        # flash-attn and TE are both CUDA-only, so they hang off one condition:
+        # the device this model's parameters are being created on. Deriving
+        # them separately is what let the LayerNorm and attention gates disagree.
+        cuda_fused_kernels_available = torch.get_default_device().type == "cuda"
         self._use_flash_attn = (
-            on_cuda
+            cuda_fused_kernels_available
             and FLASH_ATTN_INSTALLED
             and config.attn_implementation == "flash_attention_2"
         )
@@ -299,7 +300,7 @@ class EsmcModel(EsmcPreTrainedModel):
             config.num_attention_heads,
             config.num_hidden_layers,
             use_flash_attn=self._use_flash_attn,
-            use_te=on_cuda and TE_INSTALLED,
+            use_te=cuda_fused_kernels_available and TE_INSTALLED,
         )
         self._sae_models: nn.ModuleDict = nn.ModuleDict()
         self._register_state_dict_hook(_drop_te_extra_state)

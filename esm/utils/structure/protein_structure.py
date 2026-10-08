@@ -67,6 +67,7 @@ def infer_cbeta_from_atom37(
 
 @torch.no_grad()
 @autocast("cuda", enabled=False)
+@autocast("xpu", enabled=False)
 def compute_alignment_tensors(
     mobile: torch.Tensor,
     target: torch.Tensor,
@@ -162,6 +163,7 @@ def compute_alignment_tensors(
 
 @torch.no_grad()
 @autocast("cuda", enabled=False)
+@autocast("xpu", enabled=False)
 def compute_rmsd_no_alignment(
     aligned: torch.Tensor,
     target: torch.Tensor,
@@ -211,6 +213,7 @@ def compute_rmsd_no_alignment(
 
 @torch.no_grad()
 @autocast("cuda", enabled=False)
+@autocast("xpu", enabled=False)
 def compute_affine_and_rmsd(
     mobile: torch.Tensor,
     target: torch.Tensor,

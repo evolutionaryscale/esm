@@ -31,6 +31,7 @@ from esm.utils import encoding
 from esm.utils.constants import esm3 as C
 from esm.utils.constants.models import ESM3_OPEN_SMALL, normalize_model_name
 from esm.utils.decoding import decode_protein_tensor
+from esm.utils.device import resolve_default_device, supports_amp_autocast
 from esm.utils.generation import (
     _batch_forward,
     _sample_per_prompt,
@@ -226,7 +227,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
 
     @classmethod
     def from_pretrained(
-        cls, model_name: str = ESM3_OPEN_SMALL, device: torch.device | None = None
+        cls, model_name: str = ESM3_OPEN_SMALL, device: torch.device | str | None = None
     ) -> ESM3:
         from esm.pretrained import load_local_model
 
@@ -234,7 +235,9 @@ class ESM3(nn.Module, ESM3InferenceClient):
         if not model_name:
             raise ValueError(f"Model name {model_name} is not a valid ESM3 model name.")
         if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = resolve_default_device()
+        else:
+            device = torch.device(device)
         model = load_local_model(model_name, device=device)
         if device.type != "cpu":
             model = model.to(torch.bfloat16)
@@ -536,7 +539,7 @@ class ESM3(nn.Module, ESM3InferenceClient):
         with (
             torch.no_grad(),  # Assume no gradients for now...
             torch.autocast(enabled=True, device_type=device.type, dtype=torch.bfloat16)
-            if device.type == "cuda"
+            if supports_amp_autocast(device.type)
             else contextlib.nullcontext(),
         ):
             output = self(
