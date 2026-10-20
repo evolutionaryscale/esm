@@ -1,6 +1,9 @@
 """Tests for building a MolecularComplex from ESMFold2 features."""
 
+from io import StringIO
+
 import torch
+from biotite.structure.io import pdbx
 
 from esm.models.esmfold2.output import build_molecular_complex_from_features
 from esm.models.esmfold2.prepare_input import prepare_esmfold2_input
@@ -53,5 +56,6 @@ def test_ligands_differing_after_first_component_are_distinct_entities(ccd_pickl
     complex_ = _complex(
         LigandInput(id="A", ccd=["NAG", "NAG"]), LigandInput(id="B", ccd=["NAG", "BMA"])
     )
-    _, chain_to_entity, _ = complex_._get_entity_mapping()
-    assert chain_to_entity["A"] != chain_to_entity["B"]
+    cif = pdbx.CIFFile.read(StringIO(complex_.to_mmcif()))
+    entity_ids = cif.block["struct_asym"]["entity_id"].as_array().tolist()
+    assert entity_ids == ["1", "2"]
