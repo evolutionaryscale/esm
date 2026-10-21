@@ -50,9 +50,10 @@ def _lm_dropout_context(model: Any, lm_dropout: float | None):
     Applies dropout to ``lm_z`` at inference (``training=True``, fresh mask per
     loop) so repeated folds give a diverse ensemble. Release models read
     ``config.lm_encoder.lm_dropout``, the experimental model a top-level
-    ``config.lm_dropout`` — disambiguated by ``config.type``. ``None``/``0`` is a no-op.
+    ``config.lm_dropout`` — disambiguated by ``config.type``. ``None`` is a no-op;
+    ``0`` disables dropout for the call.
     """
-    if not lm_dropout:
+    if lm_dropout is None:
         yield
         return
 
