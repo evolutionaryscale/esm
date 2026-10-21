@@ -14,6 +14,7 @@ from esm.tokenization import TokenizerCollectionProtocol, get_esm3_model_tokeniz
 from esm.utils import encoding
 from esm.utils.constants.models import ESM3_OPEN_SMALL
 from esm.utils.misc import get_chainbreak_boundaries_from_sequence
+from esm.utils.structure.input_builder import MSAInput, StructurePredictionInput
 from esm.utils.structure.protein_chain import ProteinChain
 from esm.utils.structure.protein_complex import SINGLE_LETTER_CHAIN_IDS, ProteinComplex
 from esm.utils.types import FunctionAnnotation, PathOrBuffer
@@ -342,6 +343,8 @@ class GenerationConfig:
         tokens as generation conditioning.
     only_compute_backbone_rmsd (bool): Only compute the RMSD of the backbone atoms.
         Affects the returned crmsd.
+    include_pae (bool): Whether to include Predicted Aligned Error (PAE) matrix in
+        the response. Local inference ignores this flag.
     """
 
     track: str = ""
@@ -358,6 +361,7 @@ class GenerationConfig:
     top_p: float = 1.0
     condition_on_coordinates_only: bool = True
     only_compute_backbone_rmsd: bool = False
+    include_pae: bool = False
 
     def use_entropy_based_unmasking_strategy(self):
         """Use entropy based unmasking strategy during generation."""
@@ -437,6 +441,37 @@ class FoldMaxAccuracyConfig:
     include_pae: bool = False
     include_pair_chains_iptm: bool = False
     include_embeddings: bool = False
+
+
+@define
+class FoldMaxAccuracyRequest:
+    """One maximum-accuracy folding task.
+
+    Parameters
+    ----------
+    all_atom_input
+        Molecular complex to fold.
+    config
+        Per-task configuration. When omitted, use the call's shared configuration
+        or the defaults in :class:`FoldMaxAccuracyConfig`.
+    """
+
+    all_atom_input: StructurePredictionInput
+    config: FoldMaxAccuracyConfig | None = None
+
+
+@define
+class FoldRequest:
+    sequence: str
+    config: FoldingConfig | None = None
+    msa: MSAInput = None
+    target_structure: ProteinComplex | None = None
+
+
+@define
+class FoldAllAtomRequest:
+    all_atom_input: StructurePredictionInput
+    config: FoldingConfig | None = None
 
 
 ## Low Level Endpoint Types

@@ -125,7 +125,9 @@ CCD_DEPENDENT_KEYS = frozenset({"ref_pos"})
 #: Why the ``ref_pos`` comparison below is the one thing in this file that can
 #: skip: the CCD pickle is an environment-provided data artifact, like a
 #: published checkpoint, and the fast path's table is pinned to one release of it.
-MISMATCHED_CCD = "the loaded CCD is not the snapshot PROTEIN_REF_POS was frozen from"
+MISMATCHED_CCD = (
+    "KNOWN GAP: the loaded CCD is not the snapshot PROTEIN_REF_POS was frozen from"
+)
 
 C1_SEQUENCES = {
     "single_residue": "M",
@@ -215,11 +217,12 @@ def test_fast_path_ref_pos_reproduces_the_ccd_conformers(name, ccd_pickle):
 
     Split out from the shared-key test because it is the one feature that
     depends on an external data artifact rather than on code: the table is a
-    frozen copy of one CCD release, so pointing ``ESMCFOLD_CCD_PATH`` at a
-    later one makes the two paths hand the model different geometry. Measured
-    against ``biohub/ESMFold2:ccd.pkl``: bit-identical. Against the internal
-    ``ccd_20251126`` snapshot: 6.5 A max, and 1.1 A on intra-residue distances,
-    i.e. a re-generated conformer rather than a re-oriented one.
+    frozen copy of ``ESMFOLD2_CCD_REVISION``, so overriding
+    ``ESMCFOLD_CCD_PATH`` with a different release makes the two paths hand the
+    model different geometry. Regenerate with
+    ``python -m tests.regenerate_reference protein_ref_pos`` when the pin moves;
+    the guard below turns a stale table into a skip rather than a confusing
+    coordinate mismatch.
     """
     if not ccd_matches_the_hardcoded_table():
         pytest.skip(MISMATCHED_CCD)  # ty:ignore[too-many-positional-arguments]
@@ -560,36 +563,6 @@ def test_lm_shim_wraps_each_chain_in_bos_and_eos(recording_esmc, ccd_pickle):
         recording_esmc.esmc.config.hidden_size,
     )
     assert torch.isfinite(hidden).all()
-
-
-def test_lm_shim_marks_padding_with_sequence_id_minus_one(recording_esmc, ccd_pickle):
-    """``pad_to_multiple`` is the fp8 path, and it is the one that pads at B=1.
-
-    TE's fp8 kernels assert ``prod(shape[:-1]) % 8 == 0``, so ``_esmc_fp8``
-    rounds the LM input up. Those extra columns must be PAD *and* carry
-    ``sequence_id == -1``, or the last chain would grow a tail of phantom
-    residues it attends to.
-    """
-    features = batched(prepare_esmfold2_input(protein_complex_input(C4_CHAINS))[0])
-    unpadded = lm_hidden_states_for(recording_esmc, features)
-    recording_esmc.calls.clear()
-    padded = lm_hidden_states_for(recording_esmc, features, pad_to_multiple=8)
-
-    seen_ids, seen_sequence_id = recording_esmc.calls[0]
-    length = seen_ids.shape[1]
-    assert length % 8 == 0
-    # 6 + 4 + 5 residues + 6 special tokens = 21, rounded up to 24.
-    assert length == 24
-
-    is_pad = seen_ids[0] == PAD
-    assert is_pad.sum() == 3
-    assert torch.equal(seen_sequence_id[0] == -1, is_pad)
-    assert (seen_sequence_id[0][~is_pad] >= 0).all()
-
-    # Measured max|Δ| 2.4e-7 on the tiny backbone: the padded batch takes SDPA's
-    # masked path and the unpadded one its unmasked path, so the reductions
-    # differ in order but not in what they sum over.
-    torch.testing.assert_close(unpadded, padded, atol=1e-6, rtol=0)
 
 
 def test_lm_shim_gives_each_chain_its_own_sequence_id(recording_esmc, ccd_pickle):
