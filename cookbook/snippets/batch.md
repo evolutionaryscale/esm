@@ -17,6 +17,8 @@ We will be launching more models/services soon!
 ## Submit, wait, and retrieve results
 
 ```python
+import os
+
 from esm.sdk.api import FoldRequest
 from esm.sdk.forge import ForgeBatchClient
 
